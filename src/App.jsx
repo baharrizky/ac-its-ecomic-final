@@ -6,15 +6,17 @@ import { diagnoseAnswer } from "./engine/diagnosisEngine";
 import { updateMastery } from "./engine/masteryEngine";
 import { getTutorReply } from "./services/tutorService";
 import { getSession,logout } from "./services/authService";
-import Sidebar from "./components/layout/Sidebar";import Topbar from "./components/layout/Topbar";import LoginPage from "./pages/LoginPage";
+import LoginPage from "./pages/LoginPage";
+import { GraduationCap, LayoutDashboard, MessageCircle, BookOpen, PencilLine, ClipboardList, TrendingUp, Trophy, Award, MessageSquareText, Settings, BarChart3, ListChecks, Clock3, Database, KeyRound, CheckCircle2, LogOut, Menu, X, Search, Bell } from "lucide-react";
 import TeacherDashboard from "./pages/teacher/TeacherDashboard";import ComicManagement from "./pages/teacher/ComicManagement";import ComicEditorPage from "./pages/teacher/ComicEditorPage";import AnalyticsPage from "./pages/teacher/AnalyticsPage";
 import StudentDashboard from "./pages/student/StudentDashboard";import ComicLibrary from "./pages/student/ComicLibrary";import ComicReaderPage from "./pages/student/ComicReaderPage";import PracticePage from "./pages/student/PracticePage";import TutorPage from "./pages/student/TutorPage";import ProfilePage from "./pages/student/ProfilePage";import ExamPage from "./pages/student/ExamPage";import ProgressPage from "./pages/student/ProgressPage";import RankingPage from "./pages/student/RankingPage";import BadgePage from "./pages/student/BadgePage";import ReflectionPage from "./pages/student/ReflectionPage";
 const fallback={comics:initialComics,questions:initialQuestions,studentModel:initialStudentModel,screen:null,selectedComicId:null};
-export default function App(){const [session,setSession]=useState(getSession());const [state,setState]=useState(()=>loadState(fallback));const [tutorMessages,setTutorMessages]=useState([{role:"assistant",text:"Halo! Saya AI Tutor E-Comic. Kamu bisa bertanya tentang panel atau konsep yang sedang dipelajari."}]);useEffect(()=>saveState(state),[state]);
- if(!session)return <LoginPage onLogin={s=>{setSession(s);setState(x=>({...x,screen:s.role==="teacher"?"teacher-dashboard":"student-dashboard"}))}}/>;
+export default function App(){const [session,setSession]=useState(null);const [state,setState]=useState(()=>loadState(fallback));const [sidebarOpen,setSidebarOpen]=useState(false);
+ useEffect(()=>{const saved=getSession();if(saved)setSession(saved)},[]);const [tutorMessages,setTutorMessages]=useState([{role:"assistant",text:"Halo! Saya AI Tutor E-Comic. Kamu bisa bertanya tentang panel atau konsep yang sedang dipelajari."}]);useEffect(()=>saveState(state),[state]);
+ if(!session)return <LoginPage onLogin={s=>{setSession(s);setState(x=>({...x,screen:s.role==="teacher"?"teacher-dashboard":"student-dashboard",selectedComicId:null}));setSidebarOpen(false)}}/>;
  const mode=session.role;const selectedComic=useMemo(()=>state.comics.find(c=>c.id===state.selectedComicId)||null,[state.comics,state.selectedComicId]);
- const navigate=(screen,comicId=null)=>setState(s=>({...s,screen,selectedComicId:comicId}));
- const onLogout=()=>{logout();setSession(null)};
+ const navigate=(screen,comicId=null)=>{setState(s=>({...s,screen,selectedComicId:comicId}));setSidebarOpen(false)};
+ const onLogout=()=>{logout();setSession(null);setSidebarOpen(false);setState(s=>({...s,screen:null,selectedComicId:null}))};
  const handleCreate=form=>{const c=createComic(form);setState(s=>({...s,comics:[c,...s.comics],selectedComicId:c.id,screen:"comic-editor"}))};
  const handleSaveComic=u=>setState(s=>({...s,comics:updateComic(s.comics,u)}));
  const handleAnswer=(q,a)=>{const d=diagnoseAnswer(q,a);setState(s=>({...s,studentModel:updateMastery(s.studentModel,q.conceptId,d)}));return d};
@@ -23,7 +25,9 @@ export default function App(){const [session,setSession]=useState(getSession());
  const studentItems=[["student-dashboard","dashboard","Dashboard"],["tutor","tutor","Tutor AI"],["comic-library","comic","Materi E-Comic"],["practice","practice","Latihan"],["exam","exam","Ujian"],["progress","progress","Progress"],["ranking","rank","Peringkat"],["badges","badge","Badge"],["reflection","reflection","Refleksi"],["profile","profile","Profil"]];
  const renderTeacher=()=>{switch(state.screen){case"comic-management":return <ComicManagement comics={state.comics} navigate={navigate} onCreate={handleCreate} onEdit={id=>navigate("comic-editor",id)}/>;case"comic-editor":return <ComicEditorPage comic={selectedComic} onBack={()=>navigate("comic-management")} onSave={handleSaveComic}/>;case"analytics":return <AnalyticsPage state={state}/>;case"teacher-grades":return <TeacherGrades state={state}/>;case"teacher-question-progress":return <TeacherQuestionProgress state={state}/>;case"teacher-ranking":return <TeacherRanking state={state}/>;case"teacher-exam-times":return <TeacherExamTimes/>;case"teacher-knowledge":return <TeacherKnowledge/>;case"teacher-reflections":return <TeacherReflections/>;case"teacher-access":return <TeacherAccess/>;case"teacher-attendance":return <TeacherAttendance/>;case"teacher-profile":return <TeacherProfile session={session}/>;default:return <TeacherDashboard state={state} navigate={navigate}/>}};
  const renderStudent=()=>{switch(state.screen){case"tutor":return <TutorPage comic={selectedComic} studentModel={state.studentModel} messages={tutorMessages} onSend={handleTutor}/>;case"comic-library":return <ComicLibrary comics={state.comics} navigate={navigate}/>;case"comic-reader":return <ComicReaderPage comic={selectedComic} studentModel={state.studentModel} navigate={navigate}/>;case"practice":return <PracticePage questions={state.questions} studentModel={state.studentModel} onAnswer={handleAnswer}/>;case"exam":return <ExamPage questions={state.questions}/>;case"progress":return <ProgressPage studentModel={state.studentModel}/>;case"ranking":return <RankingPage studentModel={state.studentModel}/>;case"badges":return <BadgePage studentModel={state.studentModel}/>;case"reflection":return <ReflectionPage/>;case"profile":return <ProfilePage/>;default:return <StudentDashboard state={state} navigate={navigate}/>}};
- return <div className="ac-app"><Sidebar mode={mode} screen={state.screen} items={mode==="teacher"?teacherItems:studentItems} onNavigate={navigate} onLogout={onLogout} session={session}/><div className="ac-main"><Topbar mode={mode} session={session}/><main className="ac-content">{mode==="teacher"?renderTeacher():renderStudent()}</main></div></div>}
+ return <><style>{`
+.ecomic-drawer{position:fixed;z-index:100;left:0;top:0;height:100vh;width:292px;transform:translateX(-105%);transition:transform .22s ease;box-shadow:12px 0 35px rgba(30,20,70,.10);overflow-y:auto}.ecomic-drawer.is-open{transform:translateX(0)}.ecomic-sidebar-overlay{position:fixed;inset:0;border:0;background:rgba(20,16,35,.32);z-index:90}.ecomic-drawer-close{margin-left:auto;border:0;background:#f4f1fb;color:#62697a;width:34px;height:34px;border-radius:10px;display:grid;place-items:center}.ecomic-menu-toggle{width:40px;height:40px;border:0;background:#f0ebff;color:var(--primary);border-radius:11px;display:grid;place-items:center}.ecomic-topbar{gap:14px}.ecomic-topbar .topbar-title{margin-right:auto}.ecomic-menu-group{margin-bottom:13px}.ecomic-menu-label{padding:8px 15px 5px;color:#9a9ead;font-size:9px;font-weight:900;letter-spacing:.12em}.ecomic-nav{padding-top:2px}.ecomic-nav .ac-nav-item{width:100%}@media(max-width:760px){.ecomic-drawer{width:min(88vw,320px)}.ecomic-topbar{padding:0 15px}.ecomic-topbar .topbar-actions .icon-button:first-child{display:none}}
+`}</style><div className="ac-app"><ResponsiveSidebar mode={mode} screen={state.screen} items={mode==="teacher"?teacherItems:studentItems} onNavigate={navigate} onLogout={onLogout} session={session} open={sidebarOpen} onClose={()=>setSidebarOpen(false)}/><div className="ac-main"><ResponsiveTopbar mode={mode} session={session} onMenu={()=>setSidebarOpen(v=>!v)}/><main className="ac-content">{mode==="teacher"?renderTeacher():renderStudent()}</main></div></div></>}
 
 function TeacherGrades({state}){const students=[{name:"Ahmad",practice:72,exam:84,mastery:77},{name:"Siti",practice:86,exam:91,mastery:89},{name:"Budi",practice:68,exam:74,mastery:71},{name:"Dina",practice:79,exam:83,mastery:81}];return <div><div className="page-kicker">Student Assessment</div><h1 className="page-title">Nilai Siswa</h1><p className="page-desc">Rekap nilai latihan, ujian, dan mastery siswa.</p><div className="stats-row"><div className="ac-stat"><div className="stat-icon purple">▣</div><div><span>Rata-rata Mastery</span><strong>80%</strong></div></div><div className="ac-stat"><div className="stat-icon blue">✓</div><div><span>Siswa aktif</span><strong>4</strong></div></div><div className="ac-stat"><div className="stat-icon green">★</div><div><span>Rata-rata Ujian</span><strong>83%</strong></div></div><div className="ac-stat"><div className="stat-icon orange">✎</div><div><span>Soal latihan</span><strong>{state.questions.length}</strong></div></div></div><div className="card"><div className="section-head"><div><h2>Rekap Nilai</h2><span>Nilai dapat diekspor ke Excel pada tahap backend.</span></div></div><table className="table"><thead><tr><th>Siswa</th><th>Latihan</th><th>Ujian</th><th>Mastery</th><th>Status</th></tr></thead><tbody>{students.map(s=><tr key={s.name}><td><strong>{s.name}</strong></td><td>{s.practice}</td><td>{s.exam}</td><td>{s.mastery}%</td><td><span className="badge badge-green">Aktif</span></td></tr>)}</tbody></table></div></div>}
 function TeacherQuestionProgress({state}){return <div><div className="page-kicker">Item Analytics</div><h1 className="page-title">Progress per Soal</h1><p className="page-desc">Lihat tingkat keberhasilan dan respons siswa pada setiap butir soal.</p><div className="card"><table className="table"><thead><tr><th>Soal</th><th>Konsep</th><th>Kesulitan</th><th>Benar</th><th>Status</th></tr></thead><tbody>{state.questions.map((q,i)=><tr key={q.id}><td><strong>Soal {i+1}</strong><div className="subtle">{q.question}</div></td><td>{q.conceptId}</td><td>Level {q.level}</td><td>{i===0?88:i===1?71:i===2?64:52}%</td><td><span className={`badge ${i<2?"badge-green":"badge-amber"}`}>{i<2?"Baik":"Perlu ditinjau"}</span></td></tr>)}</tbody></table></div></div>}
@@ -34,3 +38,49 @@ function TeacherReflections(){return <div><div className="page-kicker">Student V
 function TeacherAccess(){return <div><div className="page-kicker">Class Access</div><h1 className="page-title">Kode Akses</h1><p className="page-desc">Buat kode kelas agar siswa dapat bergabung tanpa mengubah akun guru.</p><div className="access-card"><div><span>Kode kelas aktif</span><strong>XIPA1-7K4P</strong><small>Berlaku untuk kelas X IPA 1</small></div><button className="btn-primary">Buat Kode Baru</button></div></div>}
 function TeacherAttendance(){return <div><div className="page-kicker">Class Management</div><h1 className="page-title">Presensi</h1><p className="page-desc">Ruang presensi kelas dan aktivitas pembelajaran.</p><div className="card"><table className="table"><thead><tr><th>Siswa</th><th>Status</th><th>Aktivitas terakhir</th></tr></thead><tbody>{[["Ahmad","Hadir","08:32"],["Siti","Hadir","08:28"],["Budi","Belum hadir","-"],["Dina","Hadir","08:40"]].map(r=><tr key={r[0]}><td><strong>{r[0]}</strong></td><td><span className={`badge ${r[1]==="Hadir"?"badge-green":"badge-amber"}`}>{r[1]}</span></td><td>{r[2]}</td></tr>)}</tbody></table></div></div>}
 function TeacherProfile({session}){return <div><div className="page-kicker">Account</div><h1 className="page-title">Profil Guru</h1><p className="page-desc">Pengaturan identitas dan akun guru.</p><div className="profile-layout"><div className="profile-card"><div className="big-avatar">{session.name[0]}</div><h2>{session.name}</h2><span>Guru · Teacher Space</span></div><div className="card"><div className="field-row"><span>👤</span><div><small>Nama</small><strong>{session.name}</strong></div></div><div className="field-row"><span>✉</span><div><small>Email</small><strong>{session.email}</strong></div></div><div className="field-row"><span>🔐</span><div><small>Role</small><strong>Teacher</strong></div></div></div></div></div>}
+
+
+const menuIcons={dashboard:LayoutDashboard,tutor:MessageCircle,comic:BookOpen,practice:PencilLine,exam:ClipboardList,progress:TrendingUp,rank:Trophy,badge:Award,reflection:MessageSquareText,profile:Settings,grades:ClipboardList,analytics:BarChart3,question:ListChecks,time:Clock3,knowledge:Database,access:KeyRound,attendance:CheckCircle2};
+
+function ResponsiveSidebar({mode,screen,items,onNavigate,onLogout,session,open,onClose}){
+  const grouped = mode === "teacher" ? [
+    {label:"UTAMA", ids:["teacher-dashboard","teacher-grades","analytics","teacher-question-progress","teacher-ranking","teacher-exam-times"]},
+    {label:"KONTEN", ids:["teacher-knowledge","comic-management"]},
+    {label:"SISWA & KELAS", ids:["teacher-reflections","teacher-access","teacher-attendance"]},
+    {label:"AKUN", ids:["teacher-profile"]}
+  ] : [
+    {label:"BELAJAR", ids:["student-dashboard","tutor","comic-library","practice","exam"]},
+    {label:"PROGRESS", ids:["progress","ranking","badges","reflection"]},
+    {label:"AKUN", ids:["profile"]}
+  ];
+  const byId=Object.fromEntries(items.map(x=>[x[0],x]));
+  return <>
+    {open && <button aria-label="Tutup menu" className="ecomic-sidebar-overlay" onClick={onClose}/>} 
+    <aside className={`ac-sidebar ecomic-drawer ${open?"is-open":""}`}>
+      <div className="ac-brand">
+        <div className="ac-brand-mark"><GraduationCap size={22}/></div>
+        <div><div className="ac-brand-name">AC-ITS</div><div className="ac-brand-sub">E-Comic Learning</div></div>
+        <button className="ecomic-drawer-close" onClick={onClose} aria-label="Tutup menu"><X size={19}/></button>
+      </div>
+      <div className="ac-profile">
+        <div className="avatar">{session?.name?.[0]||"A"}</div>
+        <div className="profile-copy"><strong>{session?.name||"Pengguna"}</strong><span>{mode==="teacher"?"Guru":"Siswa"}</span></div>
+      </div>
+      <nav className="ac-nav ecomic-nav">
+        {grouped.map(group=><div className="ecomic-menu-group" key={group.label}>
+          <div className="ecomic-menu-label">{group.label}</div>
+          {group.ids.map(id=>{const item=byId[id];if(!item)return null;const [key,iconKey,label]=item;const I=menuIcons[iconKey]||BookOpen;return <button key={key} className={screen===key?"ac-nav-item active":"ac-nav-item"} onClick={()=>onNavigate(key)}><I size={18}/><span>{label}</span></button>})}
+        </div>)}
+      </nav>
+      <div className="ac-sidebar-footer"><button className="ac-mode-button logout" onClick={onLogout}><LogOut size={17}/><span>Keluar</span></button></div>
+    </aside>
+  </>;
+}
+
+function ResponsiveTopbar({mode,session,onMenu}){
+  return <header className="ac-topbar ecomic-topbar">
+    <button className="ecomic-menu-toggle" onClick={onMenu} aria-label="Buka menu"><Menu size={21}/></button>
+    <div className="topbar-title"><strong>AC-ITS</strong><span>{mode==="teacher"?"Teacher Content & Analytics Space":"Adaptive Learning Space"}</span></div>
+    <div className="topbar-actions"><button className="icon-button"><Search size={18}/></button><button className="icon-button"><Bell size={18}/></button><div className="top-user"><div className="top-avatar">{session?.name?.[0]||"A"}</div></div></div>
+  </header>;
+}
