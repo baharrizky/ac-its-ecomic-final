@@ -22,7 +22,7 @@ export default function ComicReaderPage({ comic, studentModel, navigate }) {
     <div className="reader">
       <section className="comic-stage">
         <div className="subtle">{comic.subject} · Episode {ei+1}</div><h2>{episode.title}</h2>
-        <div className="panel-art">🏞️ 👩‍🎓</div>
+        <div className="panel-art">{panel.imageUrl ? <img src={panel.imageUrl} alt={panel.title} style={{width:"100%",height:"100%",objectFit:"contain",borderRadius:13}} /> : "🏞️ 👩‍🎓"}</div>
         <div className="panel-text"><div className="page-kicker">{panel.title}</div><p style={{marginTop:7}}>{panel.narration}</p><div className="dialogue">“{panel.dialogue}”</div></div>
         <div className="reader-nav"><button className="btn" disabled={ei===0&&pi===0} onClick={prev}>← Sebelumnya</button><span className="subtle">{pi+1} / {episode.panels.length}</span><button className="btn-primary" onClick={next}>Selanjutnya →</button></div>
       </section>

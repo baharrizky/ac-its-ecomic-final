@@ -78,3 +78,6 @@ Untuk deployment produksi, backend dapat diaktifkan kemudian:
 6. bank soal dan assessment production
 
 Dokumen arsitektur dan template konten tersedia di folder `docs/`.
+
+### Image Upload
+Teacher comic editor now supports cover and panel image uploads. With Firebase Storage environment variables configured, files are uploaded to Firebase Storage. In demo mode, images are compressed and stored locally so the feature can be tested before Firebase setup.
