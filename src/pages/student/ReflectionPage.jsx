@@ -1,0 +1,3 @@
+import React,{useState} from "react";
+import { Send } from "lucide-react";
+export default function ReflectionPage(){const [text,setText]=useState("");const [saved,setSaved]=useState(false);return <div><div className="page-kicker">Reflection</div><h1 className="page-title">Refleksi Belajar</h1><p className="page-desc">Tuliskan apa yang kamu pahami dan bagian mana yang masih membingungkan.</p><div className="card reflection-card"><h2>Apa yang kamu pelajari hari ini?</h2><textarea rows="8" value={text} onChange={e=>setText(e.target.value)} placeholder="Tuliskan refleksimu..."/><button className="primary-btn" onClick={()=>setSaved(true)}><Send size={16}/> Simpan Refleksi</button>{saved&&<div className="success-note">Refleksi tersimpan pada sesi demo.</div>}</div></div>}

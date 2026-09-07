@@ -1,0 +1,4 @@
+import React from "react";
+import { Award, Flame, BookOpen, Brain, Star } from "lucide-react";
+const badges=[["First Reader","Baca E-Comic pertama",BookOpen,true],["Streak 3","Belajar 3 hari berturut-turut",Flame,true],["Concept Master","Kuasai satu konsep",Brain,true],["Quiz Star","Jawab 10 soal benar",Star,false],["Explorer","Selesaikan 5 episode",Award,false]];
+export default function BadgePage(){return <div><div className="page-kicker">Achievement</div><h1 className="page-title">Badge</h1><p className="page-desc">Kumpulkan pencapaian dari aktivitas belajarmu.</p><div className="badge-grid">{badges.map(([n,d,I,got])=><div className={`achievement-card ${got?"earned":""}`} key={n}><div className="achievement-icon"><I/></div><strong>{n}</strong><span>{d}</span><small>{got?"✓ Diperoleh":"Belum diperoleh"}</small></div>)}</div></div>}

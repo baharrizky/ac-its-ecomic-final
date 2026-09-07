@@ -1,0 +1,32 @@
+{
+  "comic": {
+    "title": "Judul E-Comic",
+    "description": "Deskripsi pembelajaran",
+    "subject": "Mata pelajaran",
+    "grade": "X",
+    "className": "X IPA 1",
+    "status": "Draft",
+    "version": "1.0",
+    "coverUrl": "",
+    "concepts": [],
+    "episodes": [
+      {
+        "title": "Episode 1",
+        "description": "",
+        "concepts": [],
+        "panels": [
+          {
+            "title": "Panel 1",
+            "imageUrl": "",
+            "narration": "",
+            "dialogue": "",
+            "conceptIds": [],
+            "learningObjectiveIds": [],
+            "aiContext": "",
+            "checkpoint": false
+          }
+        ]
+      }
+    ]
+  }
+}
