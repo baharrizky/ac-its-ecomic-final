@@ -24,6 +24,8 @@ function makeSession(profile, uid = null) {
     email: profile.email,
     educationLevel: profile.educationLevel || null,
     grade: profile.grade || null,
+    rombel: profile.rombel || null,
+    school: profile.school || "",
     loggedAt: new Date().toISOString(),
   };
 }
@@ -89,6 +91,7 @@ export async function registerAccount(form){
     subtitle: role === "teacher" ? "Guru" : "Siswa",
     educationLevel: role === "student" ? form.educationLevel : null,
     grade: role === "student" ? form.grade : null,
+    rombel: role === "student" ? (form.rombel || "1") : null,
     school: form.school?.trim() || "",
     createdAt: new Date().toISOString(),
   };
