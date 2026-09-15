@@ -131,7 +131,7 @@ export default function ComicReaderPage({ comic, studentModel, navigate }) {
                 <MediaImage
                   src={panel.imageUrl}
                   alt={panel.title || `Panel ${pi + 1}`}
-                  style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "center", borderRadius: 14 }}
+                  style={{ width: "100%", height: "auto", maxWidth: "100%", display: "block", objectFit: "contain", objectPosition: "center", borderRadius: 14 }}
                   fallback={<div className="reader-art-fallback"><BookOpen size={40} /><span>Gambar panel belum tersedia.</span></div>}
                 />
               ) : (
