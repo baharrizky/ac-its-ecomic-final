@@ -7,29 +7,24 @@ export default function MediaImage({ src, alt = "", className = "", style, fallb
   useEffect(() => {
     let alive = true;
     let objectUrl = "";
+    setResolved("");
+    if (!src) return () => {};
 
-    if (!src) {
-      setResolved("");
-      return () => {};
-    }
-
-    if (!src.startsWith("local-media://")) {
+    if (!src.startsWith("local-media://") && !src.startsWith("cloud-media://")) {
       setResolved(src);
       return () => {};
     }
 
-    getLocalMedia(src)
-      .then((blob) => {
-        if (!alive || !blob) return;
-        objectUrl = URL.createObjectURL(blob);
+    getLocalMedia(src).then((value) => {
+      if (!alive || !value) return;
+      if (typeof value === "string") setResolved(value);
+      else {
+        objectUrl = URL.createObjectURL(value);
         setResolved(objectUrl);
-      })
-      .catch(() => alive && setResolved(""));
+      }
+    }).catch(() => alive && setResolved(""));
 
-    return () => {
-      alive = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [src]);
 
   if (!resolved) return fallback;
