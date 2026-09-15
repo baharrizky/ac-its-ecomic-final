@@ -1,4 +1,4 @@
-const KEY = "ac-its-ecomic-state-v1";
+const KEY = "ac-its-ecomic-state-v4-integrated-content";
 
 export function loadState(fallback) {
   try {

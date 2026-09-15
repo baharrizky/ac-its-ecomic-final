@@ -1,8 +1,8 @@
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateProfile } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { collection, doc, getDocs, getDoc, query, setDoc, where } from "firebase/firestore";
 import { auth, db, firebaseEnabled } from "./firebaseService";
 
-const KEY = "ac-its-ecomic-session-v2";
+const KEY = "ac-its-ecomic-session-v3";
 const ACCOUNTS_KEY = "ac-its-ecomic-registered-accounts-v1";
 
 const accounts = {
@@ -82,6 +82,7 @@ export async function registerAccount(form){
   if (form.password.length < 6) return { ok:false, message:"Password minimal 6 karakter." };
   if (form.password !== form.confirmPassword) return { ok:false, message:"Konfirmasi password tidak sama." };
   if (!role) return { ok:false, message:"Pilih jenis akun terlebih dahulu." };
+  if (!form.school?.trim()) return { ok:false, message:"Sekolah wajib dipilih." };
   if (role === "student" && (!form.educationLevel || !form.grade)) return { ok:false, message:"Jenjang dan kelas siswa wajib dipilih." };
 
   const profile = {
@@ -131,6 +132,21 @@ function firebaseMessage(error){
     "auth/wrong-password": "Password tidak sesuai.",
   };
   return map[code] || `Autentikasi gagal (${code || "unknown"}).`;
+}
+
+export async function getRegisteredStudents(){
+  if (firebaseEnabled && db) {
+    await ensureFirebaseAuth();
+    try {
+      const snap = await getDocs(query(collection(db, "users"), where("role", "==", "student")));
+      return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+    } catch (error) {
+      console.warn("Gagal mengambil daftar siswa dari Firebase:", error);
+    }
+  }
+  return readRegisteredAccounts()
+    .filter(a => a.role === "student")
+    .map(({ password, ...profile }) => profile);
 }
 
 export async function logout(){

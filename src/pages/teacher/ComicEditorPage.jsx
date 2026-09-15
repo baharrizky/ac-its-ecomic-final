@@ -3,6 +3,7 @@ import Badge from "../../components/common/Badge";
 import MediaImage from "../../components/media/MediaImage";
 import { concepts } from "../../data/demoData";
 import { saveLocalMedia } from "../../services/mediaService";
+import EquationEditor from "../../components/common/EquationEditor";
 
 export default function ComicEditorPage({ comic, onBack, onSave }) {
   const [draft, setDraft] = useState(() => comic ? JSON.parse(JSON.stringify(comic)) : null);
@@ -26,7 +27,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
   function addPanel() {
     const ep = draft.episodes[episodeIndex];
     if (!ep) return;
-    const panel = { id:`panel-${Date.now()}`, order:ep.panels.length+1, title:`Panel ${ep.panels.length+1}`, narration:"", dialogue:"", conceptIds:[], imageUrl:"" };
+    const panel = { id:`panel-${Date.now()}`, order:ep.panels.length+1, title:`Panel ${ep.panels.length+1}`, narration:"", dialogue:"", equation:"", conceptIds:[], imageUrl:"" };
     patchEpisode(episodeIndex,{panels:[...ep.panels,panel]});
   }
 
@@ -112,6 +113,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
                         <div className="field"><label className="label">Judul Panel</label><input value={p.title} onChange={e=>patchPanel(pi,{title:e.target.value})}/></div>
                         <div className="field"><label className="label">Narasi</label><textarea rows="2" value={p.narration} onChange={e=>patchPanel(pi,{narration:e.target.value})}/></div>
                         <div className="field"><label className="label">Dialog</label><textarea rows="2" value={p.dialogue} onChange={e=>patchPanel(pi,{dialogue:e.target.value})}/></div>
+                        <EquationEditor value={p.equation||""} onChange={value=>patchPanel(pi,{equation:value})} label="Persamaan panel (opsional)" />
                         <div className="field"><label className="label">Konsep terkait</label><div className="concept-picker">{Object.values(concepts).map(c=><button type="button" key={c.id} className={`concept-chip ${p.conceptIds.includes(c.id)?"selected":""}`} onClick={()=>patchPanel(pi,{conceptIds:p.conceptIds.includes(c.id)?p.conceptIds.filter(x=>x!==c.id):[...p.conceptIds,c.id]})}>{c.id} · {c.name}</button>)}</div></div>
                       </div>
                     </div>

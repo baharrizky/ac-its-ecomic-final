@@ -2,6 +2,8 @@ import React, { useMemo, useState } from "react";
 import Badge from "../../components/common/Badge";
 import { concepts } from "../../data/demoData";
 import MediaImage from "../../components/media/MediaImage";
+import "katex/dist/katex.min.css";
+import katex from "katex";
 
 export default function ComicReaderPage({ comic, studentModel, navigate }) {
   const [ei,setEi]=useState(0),[pi,setPi]=useState(0);
@@ -24,7 +26,7 @@ export default function ComicReaderPage({ comic, studentModel, navigate }) {
       <section className="comic-stage">
         <div className="subtle">{comic.subject} · Episode {ei+1}</div><h2>{episode.title}</h2>
         <div className="panel-art">{panel.imageUrl ? <MediaImage src={panel.imageUrl} alt={panel.title} style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:14}} fallback={<span>🏞️ 👩‍🎓</span>} /> : "🏞️ 👩‍🎓"}</div>
-        <div className="panel-text"><div className="page-kicker">{panel.title}</div><p style={{marginTop:7}}>{panel.narration}</p><div className="dialogue">“{panel.dialogue}”</div></div>
+        <div className="panel-text"><div className="page-kicker">{panel.title}</div><p style={{marginTop:7}}>{panel.narration}</p><div className="dialogue">“{panel.dialogue}”</div>{panel.equation&&<div className="equation-preview" dangerouslySetInnerHTML={{__html:(()=>{try{return katex.renderToString(panel.equation,{displayMode:true,throwOnError:false})}catch{return panel.equation}})()}} />}</div>
         <div className="reader-nav"><button className="btn" disabled={ei===0&&pi===0} onClick={prev}>← Sebelumnya</button><span className="subtle">{pi+1} / {episode.panels.length}</span><button className="btn-primary" onClick={next}>Selanjutnya →</button></div>
       </section>
       <aside className="side-stack">

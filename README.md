@@ -1,17 +1,26 @@
-# AC-ITS E-Comic
+# AC-ITS E-Comic — Cloud Integrated v6
 
-Development build with cross-browser media sharing.
+## Perubahan utama
+- E-Comic guru tersimpan di Firestore `ecomic_comics`.
+- Siswa menerima update materi secara realtime melalui Firestore `onSnapshot`.
+- Materi Published difilter berdasarkan jenjang, kelas, dan sekolah siswa.
+- Data demo comic/soal lokal dibersihkan dari baseline baru.
+- Bank Soal guru tersedia di menu `Bank Soal`.
+- Soal dapat diberi persamaan matematika menggunakan LaTeX + KaTeX.
+- Panel E-Comic juga dapat diberi persamaan dan akan dirender saat dibaca siswa.
+- Soal disimpan di Firestore `ecomic_questions` dan disinkronkan realtime.
+- Media gambar tetap menggunakan adapter media yang ada; saat Firebase Storage tersedia, adapter dapat dipindahkan ke Storage tanpa mengubah model comic.
 
-## Media storage tanpa Firebase Storage/Blaze
-Untuk sementara upload cover/panel disimpan sebagai gambar terkompresi di Firestore (`ecomic_media`). Metadata E-Comic disimpan di `ecomic_comics`. Ini membuat upload dari browser Guru dapat dibaca browser Siswa tanpa Firebase Storage.
+## Firebase yang diperlukan
+1. Firebase Authentication: Email/Password aktif untuk akun nyata.
+2. Firestore aktif.
+3. Firestore rules sementara harus mengizinkan pengguna terautentikasi membaca/menulis collection yang dipakai.
+4. Firebase Storage tidak diperlukan untuk fitur cloud-content/equation pada versi ini.
 
-Firebase Storage/Blaze tetap menjadi target production karena lebih tepat untuk file gambar dalam jumlah besar.
-
-### Satu pengaturan Firebase yang diperlukan
-Aktifkan **Authentication → Sign-in method → Anonymous** pada Firebase Console. Firestore rules project harus mengizinkan user yang sudah terautentikasi membaca/menulis koleksi development E-Comic.
-
-Koleksi:
-- `ecomic_media`
-- `ecomic_comics`
-
-Gambar dikompresi otomatis agar dokumen Firestore tetap di bawah batas ukuran dokumen.
+## Tes integrasi
+1. Buat/login akun guru yang mempunyai `school`.
+2. Guru buat E-Comic, isi episode/panel, lalu `Published` dan simpan.
+3. Login akun siswa yang mempunyai `educationLevel`, `grade`, dan `school` yang sama.
+4. Buka `Materi E-Comic`. Materi yang baru dipublish seharusnya muncul tanpa perlu memasukkan data manual ke siswa.
+5. Di `Bank Soal`, buat soal dan masukkan persamaan seperti `2^3 = 8` atau `\\frac{x+1}{2}`.
+6. Buka `Latihan` sebagai siswa pada jenjang/kelas yang sesuai.

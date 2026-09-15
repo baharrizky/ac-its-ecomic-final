@@ -7,16 +7,17 @@ export function createComic(form) {
     educationLevel: form.educationLevel || "SMA",
     grade: form.grade,
     className: form.className,
+    school: form.school || "",
     status: form.status,
     version: "0.1",
     coverUrl: form.coverUrl || "",
-    createdBy: "current-teacher",
+    createdBy: form.createdBy || "current-teacher",
     updatedAt: new Date().toISOString().slice(0, 10),
     concepts: form.concepts || [],
-    episodes: []
+    episodes: [],
+    questions: [],
   };
 }
-
 export function updateComic(comics, updated) {
-  return comics.map((c) => c.id === updated.id ? { ...updated, updatedAt: new Date().toISOString().slice(0,10) } : c);
+  return comics.map((c) => c.id === updated.id ? { ...updated, updatedAt: new Date().toISOString().slice(0, 10) } : c);
 }

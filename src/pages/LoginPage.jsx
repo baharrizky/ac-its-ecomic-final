@@ -8,7 +8,7 @@ export default function LoginPage({onLogin,onRegisterClick}){
   const [password,setPassword]=useState("");
   const [error,setError]=useState("");
   function choose(r){setRole(r);setError("");const a=demoAccounts[r];setEmail(a.email);setPassword("");}
-  function submit(e){e.preventDefault();const res=login(role,email,password);if(!res.ok){setError(res.message);return}onLogin(res.session)}
+  async function submit(e){e.preventDefault();setError("");const res=await login(role,email,password);if(!res.ok){setError(res.message);return}onLogin(res.session)}
   return <div className="login-page">
     <div className="login-brand"><div className="brand-symbol"><GraduationCap/></div><div><strong>AC-ITS</strong><span>E-Comic Learning Platform</span></div></div>
     <div className="login-shell">
