@@ -61,7 +61,14 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
     finally { setUploading(""); }
   }
 
-  function save() { onSave(draft); setMessage("Perubahan E-Comic tersimpan."); }
+  async function save() {
+    try {
+      const ok = await onSave(draft);
+      setMessage(ok === false ? "Perubahan disimpan di perangkat, tetapi sinkronisasi Firebase belum berhasil." : "Perubahan E-Comic tersimpan dan disinkronkan.");
+    } catch (err) {
+      setMessage(err?.message || "Gagal menyimpan perubahan E-Comic.");
+    }
+  }
 
   return (
     <div>

@@ -133,6 +133,7 @@ export default function ComicReaderPage({ comic, studentModel, navigate }) {
                   alt={panel.title || `Panel ${pi + 1}`}
                   style={{ width: "100%", height: "auto", maxWidth: "100%", display: "block", objectFit: "contain", objectPosition: "center", borderRadius: 14 }}
                   fallback={<div className="reader-art-fallback"><BookOpen size={40} /><span>Gambar panel belum tersedia.</span></div>}
+                  loadingFallback={<div className="reader-art-fallback"><BookOpen size={40} /><span>Memuat komik...</span></div>}
                 />
               ) : (
                 <div className="reader-art-fallback"><BookOpen size={40} /><span>Gambar panel belum tersedia.</span></div>
