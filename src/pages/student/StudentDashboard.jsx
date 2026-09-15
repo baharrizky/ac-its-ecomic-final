@@ -3,7 +3,7 @@ import { BookOpen, MessageCircle, PencilLine, Trophy, Flame, Star, ArrowRight, P
 import Badge from "../../components/common/Badge";
 import { concepts } from "../../data/demoData";
 
-export default function StudentDashboard({state,navigate,session}) {
+export default function StudentDashboard({state,navigate}) {
   const weakest = Object.entries(state.studentModel.concepts).sort((a,b)=>a[1].mastery-b[1].mastery)[0];
   const published = state.comics.filter(c=>c.status==="Published");
   return (
@@ -11,7 +11,7 @@ export default function StudentDashboard({state,navigate,session}) {
       <div className="welcome-row">
         <div>
           <div className="page-kicker">Dashboard Siswa</div>
-          <h1 className="page-title">Halo, {session?.name || "Siswa"}! 👋</h1>
+          <h1 className="page-title">Halo, Ahmad! 👋</h1>
           <p className="page-desc">Lanjutkan perjalanan belajarmu melalui E-Comic dan latihan adaptif.</p>
         </div>
         <div className="student-level">

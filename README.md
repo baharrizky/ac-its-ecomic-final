@@ -79,5 +79,14 @@ Untuk deployment produksi, backend dapat diaktifkan kemudian:
 
 Dokumen arsitektur dan template konten tersedia di folder `docs/`.
 
-### Image Upload
-Teacher comic editor now supports cover and panel image uploads. With Firebase Storage environment variables configured, files are uploaded to Firebase Storage. In demo mode, images are compressed and stored locally so the feature can be tested before Firebase setup.
+## Development media upload (before Firebase Storage billing)
+
+The Teacher Comic Editor now supports cover and panel image uploads using browser IndexedDB. This is intentionally an adapter layer for development while Firebase Storage billing is being prepared.
+
+- Image limit: 8 MB per file
+- Supported input: browser image types (PNG/JPG/WebP/etc.)
+- Metadata stores a `local-media://...` reference in the comic state
+- Student reader resolves the local media reference and displays the panel image
+- Later, `mediaService.js` can be swapped to Firebase Storage without changing the comic editor data model
+
+The student demo account is scoped to **SMA · Kelas X**, and the Comic Library filters Published content to that scope. Teacher-created comics now include an explicit SMP/SMA level and grade.

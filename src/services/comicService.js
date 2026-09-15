@@ -4,6 +4,7 @@ export function createComic(form) {
     title: form.title.trim(),
     description: form.description.trim(),
     subject: form.subject,
+    educationLevel: form.educationLevel || "SMA",
     grade: form.grade,
     className: form.className,
     status: form.status,

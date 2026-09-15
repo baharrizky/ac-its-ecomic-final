@@ -1,30 +1,20 @@
 import React, { useRef, useState } from "react";
 import Badge from "../../components/common/Badge";
+import MediaImage from "../../components/media/MediaImage";
 import { concepts } from "../../data/demoData";
-import { uploadComicImage, removeComicImage } from "../../services/uploadService";
-
-function UploadButton({ label, onChange, disabled, accept = "image/*" }) {
-  const inputRef = useRef(null);
-  return (
-    <>
-      <input ref={inputRef} type="file" accept={accept} style={{ display: "none" }} onChange={onChange} />
-      <button type="button" className="btn" disabled={disabled} onClick={() => inputRef.current?.click()}>
-        {disabled ? "Mengunggah..." : label}
-      </button>
-    </>
-  );
-}
+import { saveLocalMedia } from "../../services/mediaService";
 
 export default function ComicEditorPage({ comic, onBack, onSave }) {
   const [draft, setDraft] = useState(() => comic ? JSON.parse(JSON.stringify(comic)) : null);
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [uploading, setUploading] = useState("");
-  const [uploadError, setUploadError] = useState("");
+  const [message, setMessage] = useState("");
+  const coverInputRef = useRef(null);
 
   if (!draft) return <div className="empty">E-Comic tidak ditemukan.</div>;
 
   function patchEpisode(index, patch) {
-    setDraft(d => ({ ...d, episodes: d.episodes.map((ep, i) => i === index ? { ...ep, ...patch } : ep) }));
+    setDraft(d => ({...d, episodes:d.episodes.map((ep,i)=>i===index?{...ep,...patch}:ep)}));
   }
 
   function addEpisode() {
@@ -36,7 +26,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
   function addPanel() {
     const ep = draft.episodes[episodeIndex];
     if (!ep) return;
-    const panel = { id:`panel-${Date.now()}`, order:ep.panels.length+1, title:`Panel ${ep.panels.length+1}`, narration:"", dialogue:"", conceptIds:[], imageUrl:"", imagePath:null };
+    const panel = { id:`panel-${Date.now()}`, order:ep.panels.length+1, title:`Panel ${ep.panels.length+1}`, narration:"", dialogue:"", conceptIds:[], imageUrl:"" };
     patchEpisode(episodeIndex,{panels:[...ep.panels,panel]});
   }
 
@@ -45,46 +35,32 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
     patchEpisode(episodeIndex,{panels:ep.panels.map((p,i)=>i===pi?{...p,...patch}:p)});
   }
 
-  async function handleCover(file) {
-    setUploadError("");
+  async function handleCoverUpload(file) {
     if (!file) return;
-    setUploading("cover");
+    setUploading("cover"); setMessage("");
     try {
-      const result = await uploadComicImage(file, { comicId:draft.id, episodeId:"cover", panelId:"cover" });
-      setDraft(d=>({...d,coverUrl:result.url,coverPath:result.path}));
-    } catch (e) {
-      setUploadError(e.message || "Upload cover gagal.");
-    } finally { setUploading(""); }
+      const ref = await saveLocalMedia(file, { kind:"cover", comicId:draft.id });
+      setDraft(d=>({...d,coverUrl:ref}));
+      setMessage("Cover berhasil diunggah ke penyimpanan lokal browser.");
+    } catch (err) { setMessage(err.message || "Gagal mengunggah cover."); }
+    finally { setUploading(""); if (coverInputRef.current) coverInputRef.current.value=""; }
   }
 
-  async function handlePanelImage(pi, file) {
-    setUploadError("");
+  async function handlePanelUpload(pi, file) {
     if (!file) return;
-    const panel = draft.episodes[episodeIndex]?.panels[pi];
+    const ep = draft.episodes[episodeIndex];
+    const panel = ep?.panels?.[pi];
     if (!panel) return;
-    setUploading(`panel-${panel.id}`);
+    setUploading(panel.id); setMessage("");
     try {
-      const result = await uploadComicImage(file, { comicId:draft.id, episodeId:draft.episodes[episodeIndex].id, panelId:panel.id });
-      setDraft(d=>({...d,episodes:d.episodes.map((ep,ei)=>ei===episodeIndex?{...ep,panels:ep.panels.map((p,i)=>i===pi?{...p,imageUrl:result.url,imagePath:result.path}:p)}:ep)}));
-    } catch (e) {
-      setUploadError(e.message || "Upload gambar panel gagal.");
-    } finally { setUploading(""); }
+      const ref = await saveLocalMedia(file, { kind:"panel", comicId:draft.id, episodeId:ep.id, panelId:panel.id });
+      patchPanel(pi,{imageUrl:ref});
+      setMessage(`Gambar ${panel.title} berhasil diunggah.`);
+    } catch (err) { setMessage(err.message || "Gagal mengunggah gambar panel."); }
+    finally { setUploading(""); }
   }
 
-  async function clearImage(pi) {
-    const panel = draft.episodes[episodeIndex]?.panels[pi];
-    if (!panel?.imageUrl) return;
-    try { await removeComicImage(panel.imagePath); } catch {}
-    patchPanel(pi,{imageUrl:"",imagePath:null});
-  }
-
-  async function clearCover() {
-    if (!draft.coverUrl) return;
-    try { await removeComicImage(draft.coverPath); } catch {}
-    setDraft(d=>({...d,coverUrl:"",coverPath:null}));
-  }
-
-  function save() { onSave(draft); alert("Perubahan E-Comic tersimpan."); }
+  function save() { onSave(draft); setMessage("Perubahan E-Comic tersimpan."); }
 
   return (
     <div>
@@ -94,9 +70,9 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
       </div>
       <div className="page-kicker">Comic Editor</div>
       <h1 className="page-title">{draft.title}</h1>
-      <p className="page-desc">Editor konten guru. Struktur panel, gambar, dan mapping konsep disimpan sebagai data.</p>
+      <p className="page-desc">Editor konten guru. Gambar dapat diunggah sekarang untuk development; nanti penyimpanan ini dapat diganti langsung ke Firebase Storage.</p>
 
-      {uploadError && <div className="upload-error">{uploadError}</div>}
+      {message && <div className={`upload-note ${message.includes("berhasil")||message.includes("tersimpan")?"success":"error"}`}>{message}</div>}
 
       <div className="editor-grid" style={{marginTop:18}}>
         <div>
@@ -104,23 +80,17 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
             <div className="field"><label className="label">Judul E-Comic</label><input value={draft.title} onChange={e=>setDraft({...draft,title:e.target.value})}/></div>
             <div className="field"><label className="label">Deskripsi</label><textarea rows="3" value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})}/></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div className="field"><label className="label">Jenjang</label><select value={draft.educationLevel||"SMA"} onChange={e=>setDraft({...draft,educationLevel:e.target.value})}><option>SMP</option><option>SMA</option></select></div>
+              <div className="field"><label className="label">Kelas</label><select value={draft.grade} onChange={e=>setDraft({...draft,grade:e.target.value})}>{(draft.educationLevel==="SMP"?["7","8","9"]:["X","XI","XII"]).map(g=><option key={g}>{g}</option>)}</select></div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div className="field"><label className="label">Materi</label><input value={draft.subject} onChange={e=>setDraft({...draft,subject:e.target.value})}/></div>
               <div className="field"><label className="label">Status</label><select value={draft.status} onChange={e=>setDraft({...draft,status:e.target.value})}><option>Draft</option><option>Published</option></select></div>
             </div>
-
-            <div className="field">
-              <label className="label">Cover E-Comic</label>
-              <div className="cover-upload">
-                <div className="cover-preview">
-                  {draft.coverUrl ? <img src={draft.coverUrl} alt="Cover E-Comic" /> : <div className="cover-placeholder">📖</div>}
-                </div>
-                <div className="upload-actions">
-                  <UploadButton label={uploading==="cover"?"Mengunggah...":"📤 Upload Cover"} disabled={uploading!==""} onChange={e=>handleCover(e.target.files?.[0])}/>
-                  {draft.coverUrl && <button type="button" className="btn" onClick={clearCover}>Hapus</button>}
-                  <span className="subtle">JPG, PNG, WEBP · maks. 10 MB</span>
-                </div>
-              </div>
-            </div>
+            <div className="field"><label className="label">Cover E-Comic</label><div className="cover-upload-row">
+              <div className="cover-upload-preview">{draft.coverUrl ? <MediaImage src={draft.coverUrl} alt="Cover" style={{width:"100%",height:"100%",objectFit:"cover"}} fallback={<span>📖</span>} /> : <span>📖</span>}</div>
+              <div><input ref={coverInputRef} type="file" accept="image/*" onChange={e=>handleCoverUpload(e.target.files?.[0])} /><div className="subtle" style={{marginTop:5}}>PNG/JPG/WebP · maksimal 8 MB</div>{uploading==="cover"&&<div className="subtle">Mengunggah...</div>}</div>
+            </div></div>
           </div>
 
           <h2 className="section-title">Episode & Panel</h2>
@@ -136,16 +106,9 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
                   <div className="toolbar"><strong>{ep.panels.length} panel</strong><button className="btn" onClick={addPanel}>+ Tambah Panel</button></div>
                   {ep.panels.map((p,pi)=><div className="panel-editor" key={p.id}>
                     <div className="panel-row">
-                      <div>
-                        <div className="panel-thumb panel-thumb-image">
-                          {p.imageUrl ? <img src={p.imageUrl} alt={`Panel ${pi+1}`} /> : <span>🖼️</span>}
-                        </div>
-                        <div className="panel-upload-actions">
-                          <UploadButton label="📤 Upload" disabled={uploading!==""} onChange={e=>handlePanelImage(pi,e.target.files?.[0])}/>
-                          {p.imageUrl && <button type="button" className="btn btn-small" onClick={()=>clearImage(pi)}>Hapus</button>}
-                        </div>
-                      </div>
-                      <div>
+                      <div className="panel-thumb panel-upload-thumb">{p.imageUrl ? <MediaImage src={p.imageUrl} alt={p.title} style={{width:"100%",height:"100%",objectFit:"cover"}} fallback={<span>🖼️</span>} /> : <span>🖼️</span>}</div>
+                      <div style={{minWidth:0}}>
+                        <div className="field"><label className="label">Gambar Panel</label><input type="file" accept="image/*" onChange={e=>handlePanelUpload(pi,e.target.files?.[0])}/>{uploading===p.id&&<div className="subtle">Mengunggah...</div>}</div>
                         <div className="field"><label className="label">Judul Panel</label><input value={p.title} onChange={e=>patchPanel(pi,{title:e.target.value})}/></div>
                         <div className="field"><label className="label">Narasi</label><textarea rows="2" value={p.narration} onChange={e=>patchPanel(pi,{narration:e.target.value})}/></div>
                         <div className="field"><label className="label">Dialog</label><textarea rows="2" value={p.dialogue} onChange={e=>patchPanel(pi,{dialogue:e.target.value})}/></div>
@@ -163,18 +126,11 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
           <div className="card">
             <div className="label">Content Pipeline</div>
             <div className="list">
-              {["Metadata","Cover","Episode","Panel + Gambar","Concept Mapping","Preview","Publish"].map((x,i)=><div className="list-item" key={x}><span><strong>{i+1}. {x}</strong></span><Badge tone={i<4?"green":"slate"}>{i<4?"Siap":"Berikutnya"}</Badge></div>)}
+              {["Metadata","Episode","Panel","Concept Mapping","Preview","Publish"].map((x,i)=><div className="list-item" key={x}><span><strong>{i+1}. {x}</strong></span><Badge tone={i<4?"green":"slate"}>{i<4?"Siap":"Berikutnya"}</Badge></div>)}
             </div>
           </div>
-          <div className="card">
-            <div className="label">Penyimpanan Gambar</div>
-            <p className="subtle">{draft.coverUrl || draft.episodes.some(e=>e.panels.some(p=>p.imageUrl)) ? "Gambar sudah tersedia pada draft." : "Belum ada gambar."}</p>
-            <p className="subtle" style={{marginTop:8}}>Jika Firebase Storage aktif, file disimpan permanen di Firebase. Tanpa Firebase, mode demo menyimpan gambar terkompresi di browser.</p>
-          </div>
-          <div className="card">
-            <div className="label">AI Context</div>
-            <p className="subtle">Setiap panel yang memiliki gambar, narration, dialogue, dan conceptIds dapat menjadi konteks AI Tutor.</p>
-          </div>
+          <div className="card"><div className="label">Adaptive Learning</div><p className="subtle">Jenjang dan kelas menjadi metadata akses. Siswa hanya akan menerima E-Comic yang sesuai profilnya setelah filter akses diaktifkan.</p></div>
+          <div className="card"><div className="label">AI Context</div><p className="subtle">Setiap panel yang memiliki conceptIds dapat menjadi konteks AI Tutor dan titik pengukuran pembelajaran.</p></div>
         </aside>
       </div>
     </div>
