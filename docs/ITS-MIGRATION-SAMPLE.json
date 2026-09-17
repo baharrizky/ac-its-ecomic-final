@@ -1,0 +1,48 @@
+{
+  "users": [
+    {
+      "id": "legacy-user-001",
+      "uid": "firebase-auth-uid-if-same",
+      "name": "Nama Siswa",
+      "email": "siswa@example.com",
+      "role": "student",
+      "educationLevel": "SMA",
+      "grade": "X",
+      "rombel": "1",
+      "school": "SMA Negeri 8 Kota Jambi"
+    }
+  ],
+  "studentModels": [
+    {
+      "id": "legacy-model-001",
+      "uid": "firebase-auth-uid-if-same",
+      "overallMastery": 0.72,
+      "concepts": {},
+      "misconceptions": [],
+      "xp": 120,
+      "totalAttempts": 10,
+      "totalCorrect": 8
+    }
+  ],
+  "attempts": [
+    {
+      "id": "legacy-attempt-001",
+      "uid": "firebase-auth-uid-if-same",
+      "questionId": "q-001",
+      "conceptId": "E1",
+      "correct": true,
+      "score": 100,
+      "mode": "practice",
+      "createdAt": "2026-09-01T08:00:00.000Z"
+    }
+  ],
+  "learningEvents": [
+    {
+      "id": "legacy-event-001",
+      "uid": "firebase-auth-uid-if-same",
+      "type": "comic_panel_view",
+      "durationSeconds": 95,
+      "createdAt": "2026-09-01T08:03:00.000Z"
+    }
+  ]
+}

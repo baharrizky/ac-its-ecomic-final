@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useState} from "react";
+import React,{useEffect,useMemo,useRef,useState} from "react";
 import { BookOpen, CheckCircle2, ClipboardList, Info, Lightbulb, Maximize2, MessageCircle, Minimize2, PanelRight, PlayCircle, TrendingUp, Users, X } from "lucide-react";
 import Badge from "../../components/common/Badge";
 import { concepts } from "../../data/demoData";
@@ -11,6 +11,9 @@ const renderEquation=v=>{if(!v)return null;try{return katex.renderToString(v,{di
 
 export default function ComicReaderPage({comic,studentModel,questions=[],navigate,onPanelViewed,onAnswer,onAIExplain}){
  const [ei,setEi]=useState(0),[pi,setPi]=useState(0),[focusMode,setFocusMode]=useState(false),[infoTab,setInfoTab]=useState("tutor"),[quizSelected,setQuizSelected]=useState(null),[quizDiagnosis,setQuizDiagnosis]=useState(null),[aiReply,setAiReply]=useState(""),[loadingAI,setLoadingAI]=useState(false);
+ const panelStartedAt=useRef(Date.now());
+ const lastPanelRef=useRef({comicId:comic?.id,episodeIndex:0,panelIndex:0});
+ const quizStartedAt=useRef(Date.now());
  const episode=comic?.episodes?.[ei],panel=episode?.panels?.[pi];
  const totalPanels=useMemo(()=>comic?.episodes?.reduce((sum,ep)=>sum+(ep.panels?.length||0),0)||0,[comic]);
  const currentGlobalPanel=useMemo(()=>comic?comic.episodes.slice(0,ei).reduce((sum,ep)=>sum+(ep.panels?.length||0),0)+pi+1:0,[comic,ei,pi]);
@@ -18,14 +21,26 @@ export default function ComicReaderPage({comic,studentModel,questions=[],navigat
  const conceptId=panel?.conceptIds?.[0]; const conceptName=concepts[conceptId]?.name||conceptId||"Konsep pembelajaran"; const mastery=conceptId?studentModel?.concepts?.[conceptId]?.mastery:null;
  const relatedQuestions=useMemo(()=>questions.filter(q=>!conceptId||q.conceptId===conceptId).slice(0,4),[questions,conceptId]);
  const activeQuestion=relatedQuestions[0];
- useEffect(()=>{onPanelViewed?.({comic,episodeIndex:ei,panelIndex:pi});setQuizSelected(null);setQuizDiagnosis(null);setAiReply("");},[comic?.id,ei,pi]);
+ useEffect(()=>{
+   const now=Date.now();
+   const prev=lastPanelRef.current;
+   const previousDuration=panelStartedAt.current ? Math.floor((now-panelStartedAt.current)/1000) : 0;
+   if(prev && prev.comicId===comic?.id && (prev.episodeIndex!==ei || prev.panelIndex!==pi)){
+     onPanelViewed?.({comic,episodeIndex:prev.episodeIndex,panelIndex:prev.panelIndex,durationSeconds:previousDuration});
+   }
+   onPanelViewed?.({comic,episodeIndex:ei,panelIndex:pi,durationSeconds:0});
+   lastPanelRef.current={comicId:comic?.id,episodeIndex:ei,panelIndex:pi};
+   panelStartedAt.current=now;
+   quizStartedAt.current=now;
+   setQuizSelected(null);setQuizDiagnosis(null);setAiReply("");
+ },[comic?.id,ei,pi]);
  useEffect(()=>{if(!focusMode)return;const old=document.body.style.overflow;document.body.style.overflow="hidden";const key=e=>{if(e.key==="Escape")setFocusMode(false);if(e.key==="ArrowRight")next();if(e.key==="ArrowLeft")prev();};window.addEventListener("keydown",key);return()=>{document.body.style.overflow=old;window.removeEventListener("keydown",key)};},[focusMode,ei,pi,comic]);
  if(!comic)return <div className="empty">Comic tidak ditemukan.</div>;
  if(!episode||!panel)return <div><button className="btn" onClick={()=>navigate("comic-library")}>← Kembali</button><div className="card empty" style={{marginTop:14}}>Belum ada episode yang memiliki panel.</div></div>;
  function next(){if(pi<episode.panels.length-1)setPi(v=>v+1);else if(ei<comic.episodes.length-1){setEi(v=>v+1);setPi(0)}}
  function prev(){if(pi>0)setPi(v=>v-1);else if(ei>0){const e=ei-1;setEi(e);setPi(Math.max(0,(comic.episodes[e].panels?.length||1)-1))}}
  function jumpToEpisode(i){setEi(i);setPi(0)}
- async function answerQuiz(i){if(quizDiagnosis||!activeQuestion||!onAnswer)return;setQuizSelected(i);const d=await onAnswer(activeQuestion,i,"reader-quiz");setQuizDiagnosis(d)}
+ async function answerQuiz(i){if(quizDiagnosis||!activeQuestion||!onAnswer)return;setQuizSelected(i);const duration=Math.floor((Date.now()-quizStartedAt.current)/1000);const d=await onAnswer(activeQuestion,i,"reader-quiz",duration);setQuizDiagnosis(d)}
  async function askAI(){if(!onAIExplain)return;setLoadingAI(true);try{const r=await onAIExplain({message:`Jelaskan panel ini dengan bahasa siswa ${studentModel?.currentLevel||1}. Fokus pada konsep ${conceptName}.`,context:{comicTitle:comic.title,episodeTitle:episode.title,panelTitle:panel.title,narration:panel.narration,dialogue:panel.dialogue,equation:panel.equation,conceptId,conceptName,mastery}});setAiReply(r?.reply||"")}finally{setLoadingAI(false)}}
  const content=<div className={`reader-page ${focusMode?"reader-page-focus":""}`}>
   <div className="reader-toolbar"><button className="btn" onClick={()=>navigate("comic-library")}>← Koleksi</button><div className="reader-breadcrumb"><strong>{comic.title}</strong><span>Episode {ei+1} · {episode.title}</span></div><div className="reader-actions"><span className="reader-progress-pill">{overallProgress}% selesai</span><button className="btn" onClick={()=>setFocusMode(v=>!v)}>{focusMode?<Minimize2 size={16}/>:<Maximize2 size={16}/>} {focusMode?"Kembali ke normal":"Mode baca"}</button>{focusMode&&<button className="reader-icon-close" onClick={()=>setFocusMode(false)}><X size={18}/></button>}</div></div>

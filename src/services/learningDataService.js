@@ -79,6 +79,25 @@ export async function recordLearningEvent(event = {}) {
   return false;
 }
 
+
+export async function listLearningEvents(filters = {}) {
+  if (await ready()) {
+    try {
+      const snap = await getDocs(collection(db, "learningEvents"));
+      let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value != null && value !== "") rows = rows.filter(r => r[key] === value);
+      });
+      return rows.sort((a,b)=>String(b.createdAt||b.endedAt||b.startedAt||"").localeCompare(String(a.createdAt||a.endedAt||a.startedAt||"")));
+    } catch (e) { console.warn("learning event list failed", e); }
+  }
+  let rows = localRead("learningEvents", []);
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value != null && value !== "") rows = rows.filter(r => r[key] === value);
+  });
+  return rows.sort((a,b)=>String(b.createdAt||b.endedAt||b.startedAt||"").localeCompare(String(a.createdAt||a.endedAt||a.startedAt||"")));
+}
+
 export async function recordAttempt(attempt = {}) {
   const item = { ...attempt, id: attempt.id || `attempt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, createdAt: attempt.createdAt || new Date().toISOString() };
   localUpsert("attempts", item.id, item);
