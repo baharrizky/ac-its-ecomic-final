@@ -149,6 +149,19 @@ export async function getRegisteredStudents(){
     .map(({ password, ...profile }) => profile);
 }
 
+export function updateSessionProfile(patch){
+  const current=getSession();
+  if(!current)return null;
+  const next={...current,...patch};
+  localStorage.setItem(KEY,JSON.stringify(next));
+  return next;
+}
+
+export async function updateUserProfile(uid,patch){
+  if(firebaseEnabled && db && uid){try{await setDoc(doc(db,"users",uid),patch,{merge:true});}catch(error){console.warn("profile update failed",error);}}
+  return updateSessionProfile(patch);
+}
+
 export async function logout(){
   localStorage.removeItem(KEY);
   if (firebaseEnabled && auth) { try { await signOut(auth); } catch {} }

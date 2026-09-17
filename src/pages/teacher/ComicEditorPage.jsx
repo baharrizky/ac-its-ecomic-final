@@ -27,7 +27,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
   function addPanel() {
     const ep = draft.episodes[episodeIndex];
     if (!ep) return;
-    const panel = { id:`panel-${Date.now()}`, order:ep.panels.length+1, title:`Panel ${ep.panels.length+1}`, narration:"", dialogue:"", equation:"", conceptIds:[], imageUrl:"" };
+    const panel = { id:`panel-${Date.now()}`, order:ep.panels.length+1, title:`Panel ${ep.panels.length+1}`, narration:"", dialogue:"", equation:"", conceptIds:[], characters:[], imageUrl:"" };
     patchEpisode(episodeIndex,{panels:[...ep.panels,panel]});
   }
 
@@ -42,7 +42,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
     try {
       const ref = await saveLocalMedia(file, { kind:"cover", comicId:draft.id });
       setDraft(d=>({...d,coverUrl:ref}));
-      setMessage("Cover berhasil diunggah ke penyimpanan lokal browser.");
+      setMessage("Cover berhasil diunggah.");
     } catch (err) { setMessage(err.message || "Gagal mengunggah cover."); }
     finally { setUploading(""); if (coverInputRef.current) coverInputRef.current.value=""; }
   }
@@ -78,7 +78,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
       </div>
       <div className="page-kicker">Comic Editor</div>
       <h1 className="page-title">{draft.title}</h1>
-      <p className="page-desc">Editor konten guru. Gambar dapat diunggah sekarang untuk development; nanti penyimpanan ini dapat diganti langsung ke Firebase Storage.</p>
+      <p className="page-desc">Editor konten guru. Gambar dikompresi dan disimpan melalui media service; Firebase Storage dapat diaktifkan kemudian tanpa mengubah struktur konten.</p>
 
       {message && <div className={`upload-note ${message.includes("berhasil")||message.includes("tersimpan")?"success":"error"}`}>{message}</div>}
 
@@ -89,7 +89,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
             <div className="field"><label className="label">Deskripsi</label><textarea rows="3" value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})}/></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div className="field"><label className="label">Jenjang</label><select value={draft.educationLevel||"SMA"} onChange={e=>setDraft({...draft,educationLevel:e.target.value})}><option>SMP</option><option>SMA</option></select></div>
-              <div className="field"><label className="label">Kelas</label><select value={draft.grade} onChange={e=>setDraft({...draft,grade:e.target.value})}>{(draft.educationLevel==="SMP"?["7","8","9"]:["X","XI","XII"]).map(g=><option key={g}>{g}</option>)}</select></div>
+              <div className="field"><label className="label">Kelas</label><select value={draft.grade} onChange={e=>setDraft({...draft,grade:e.target.value})}>{(draft.educationLevel==="SMP"?["VII","VIII","IX"]:["X","XI","XII"]).map(g=><option key={g}>{g}</option>)}</select></div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div className="field"><label className="label">Materi</label><input value={draft.subject} onChange={e=>setDraft({...draft,subject:e.target.value})}/></div>
@@ -120,6 +120,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
                         <div className="field"><label className="label">Judul Panel</label><input value={p.title} onChange={e=>patchPanel(pi,{title:e.target.value})}/></div>
                         <div className="field"><label className="label">Narasi</label><textarea rows="2" value={p.narration} onChange={e=>patchPanel(pi,{narration:e.target.value})}/></div>
                         <div className="field"><label className="label">Dialog</label><textarea rows="2" value={p.dialogue} onChange={e=>patchPanel(pi,{dialogue:e.target.value})}/></div>
+                        <div className="field"><label className="label">Tokoh pada panel (pisahkan dengan koma)</label><input value={(p.characters||[]).join(", ")} onChange={e=>patchPanel(pi,{characters:e.target.value.split(",").map(x=>x.trim()).filter(Boolean)})} placeholder="Sari, Riko, Nenek Sari"/></div>
                         <EquationEditor value={p.equation||""} onChange={value=>patchPanel(pi,{equation:value})} label="Persamaan panel (opsional)" />
                         <div className="field"><label className="label">Konsep terkait</label><div className="concept-picker">{Object.values(concepts).map(c=><button type="button" key={c.id} className={`concept-chip ${p.conceptIds.includes(c.id)?"selected":""}`} onClick={()=>patchPanel(pi,{conceptIds:p.conceptIds.includes(c.id)?p.conceptIds.filter(x=>x!==c.id):[...p.conceptIds,c.id]})}>{c.id} · {c.name}</button>)}</div></div>
                       </div>

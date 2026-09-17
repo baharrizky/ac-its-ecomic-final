@@ -44,7 +44,7 @@ export default function ComicManagement({ comics, navigate, onCreate, onEdit }) 
       </div>
 
       <div className="card-grid">
-        {visible.map(comic => <ComicCard key={comic.id} comic={comic} teacher onOpen={(id)=>navigate("comic-reader",id)} onEdit={onEdit} />)}
+        {visible.map(comic => <ComicCard key={comic.id} comic={comic} teacher onOpen={(id)=>navigate("comic-preview",id)} onEdit={onEdit} />)}
         {visible.length === 0 && <div className="card empty" style={{gridColumn:"1/-1"}}>Belum ada E-Comic yang sesuai filter.</div>}
       </div>
 
@@ -55,8 +55,8 @@ export default function ComicManagement({ comics, navigate, onCreate, onEdit }) 
             <div className="field"><label className="label">Judul</label><input required value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Contoh: Eksponen dalam Kehidupan" /></div>
             <div className="field"><label className="label">Deskripsi</label><textarea rows="3" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} /></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div className="field"><label className="label">Jenjang</label><select value={form.educationLevel} onChange={e=>setForm({...form,educationLevel:e.target.value,grade:e.target.value==="SMP"?"7":"X",className:e.target.value==="SMP"?"VII":"X IPA 1"})}><option>SMP</option><option>SMA</option></select></div>
-              <div className="field"><label className="label">Kelas</label><select value={form.grade} onChange={e=>setForm({...form,grade:e.target.value})}>{(form.educationLevel==="SMP"?["7","8","9"]:["X","XI","XII"]).map(g=><option key={g}>{g}</option>)}</select></div>
+              <div className="field"><label className="label">Jenjang</label><select value={form.educationLevel} onChange={e=>setForm({...form,educationLevel:e.target.value,grade:e.target.value==="SMP"?"VII":"X",className:e.target.value==="SMP"?"VII":"X IPA 1"})}><option>SMP</option><option>SMA</option></select></div>
+              <div className="field"><label className="label">Kelas</label><select value={form.grade} onChange={e=>setForm({...form,grade:e.target.value})}>{(form.educationLevel==="SMP"?["VII","VIII","IX"]:["X","XI","XII"]).map(g=><option key={g}>{g}</option>)}</select></div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div className="field"><label className="label">Materi</label><input value={form.subject} onChange={e=>setForm({...form,subject:e.target.value})}/></div>

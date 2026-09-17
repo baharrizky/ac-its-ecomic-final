@@ -1,6 +1,6 @@
 import React from "react";
 import { BookOpen, BarChart3, Users, Plus, ArrowRight } from "lucide-react";
-export default function TeacherDashboard({state,navigate,students=[],session}){
+export default function TeacherDashboard({state,navigate,students=[],session,onSeedPack}){
  const scopedStudents=session?.school ? students.filter(s=>s.school===session.school) : students;
  const published=state.comics.filter(c=>c.status==="Published").length;
  const episodes=state.comics.reduce((n,c)=>n+c.episodes.length,0);

@@ -5,7 +5,10 @@ import { concepts } from "../../data/demoData";
 
 export default function StudentDashboard({state,navigate,session}) {
   const weakest = Object.entries(state.studentModel.concepts).sort((a,b)=>a[1].mastery-b[1].mastery)[0];
-  const published = state.comics.filter(c=>c.status==="Published");
+  const published = state.comics.filter(c=>c.status==="Published" && (!session?.educationLevel || c.educationLevel===session.educationLevel) && (!session?.grade || String(c.grade)===String(session.grade)) && (!session?.school || !c.school || c.school===session.school));
+  const completedPanels = Object.keys(state.studentModel.completedPanels||{}).length;
+  const totalPanels = published.reduce((sum,c)=>sum+(c.episodes||[]).reduce((n,e)=>n+(e.panels?.length||0),0),0);
+  const completedComics = (state.studentModel.completedComics||[]).length;
   return (
     <div className="dashboard-page">
       <div className="welcome-row">
@@ -21,10 +24,10 @@ export default function StudentDashboard({state,navigate,session}) {
       </div>
 
       <div className="stats-row">
-        <div className="ac-stat"><div className="stat-icon blue"><BookOpen size={20}/></div><div><span>Materi selesai</span><strong>4 / 8</strong></div></div>
+        <div className="ac-stat"><div className="stat-icon blue"><BookOpen size={20}/></div><div><span>Materi selesai</span><strong>{completedComics} / {published.length}</strong></div></div>
         <div className="ac-stat"><div className="stat-icon orange"><Flame size={20}/></div><div><span>Streak</span><strong>{state.studentModel.streak} hari</strong></div></div>
         <div className="ac-stat"><div className="stat-icon purple"><Star size={20}/></div><div><span>Total XP</span><strong>{state.studentModel.xp}</strong></div></div>
-        <div className="ac-stat"><div className="stat-icon green"><Trophy size={20}/></div><div><span>Mastery</span><strong>{Math.round(state.studentModel.overallMastery*100)}%</strong></div></div>
+        <div className="ac-stat"><div className="stat-icon green"><Trophy size={20}/></div><div><span>Mastery</span><strong>{Math.round((state.studentModel.overallMastery||0)*100)}%</strong></div></div>
       </div>
 
       <div className="ac-hero">

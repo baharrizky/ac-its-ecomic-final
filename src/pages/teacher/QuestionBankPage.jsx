@@ -13,7 +13,7 @@ export default function QuestionBankPage({ questions, onSave, onDelete }) {
   function openNew(){setEditing({...emptyQuestion,id:`q-${Date.now()}`});}
   function save(){
     if(!editing.question.trim() || editing.options.some(o=>!o.trim())) return;
-    onSave({...editing,question:editing.question.trim(),options:editing.options.map(o=>o.trim())});
+    onSave({...editing,question:editing.question.trim(),options:editing.options.map(o=>o.trim()),difficulty:Number(editing.level||1),misconceptionTags:editing.misconceptionTags||["UNCLASSIFIED"]});
     setEditing(null);
   }
   return <div>
@@ -26,7 +26,7 @@ export default function QuestionBankPage({ questions, onSave, onDelete }) {
       <EquationEditor value={editing.equation} onChange={v=>setEditing({...editing,equation:v})} label="Persamaan soal (opsional)"/>
       <div className="field"><label className="label">Pilihan jawaban</label>{editing.options.map((o,i)=><div key={i} style={{display:"flex",gap:8,marginBottom:8}}><button type="button" className={`equation-chip ${editing.answer===i?"selected":""}`} onClick={()=>setEditing({...editing,answer:i})}>{String.fromCharCode(65+i)}</button><input value={o} onChange={e=>setEditing({...editing,options:editing.options.map((x,j)=>j===i?e.target.value:x)})} placeholder={`Pilihan ${String.fromCharCode(65+i)}`}/></div>)}</div>
       <div className="register-grid"><div className="field"><label className="label">Konsep</label><select value={editing.conceptId} onChange={e=>setEditing({...editing,conceptId:e.target.value})}>{Object.values(concepts).map(c=><option key={c.id} value={c.id}>{c.id} · {c.name}</option>)}</select></div><div className="field"><label className="label">Level kesulitan</label><select value={editing.level} onChange={e=>setEditing({...editing,level:Number(e.target.value)})}><option value={1}>Level 1 · Dasar</option><option value={2}>Level 2 · Menengah</option><option value={3}>Level 3 · Lanjutan</option></select></div></div>
-      <div className="field"><label className="label">Pembahasan</label><textarea rows="3" value={editing.explanation} onChange={e=>setEditing({...editing,explanation:e.target.value})}/></div>
+      <div className="register-grid"><div className="field"><label className="label">Status</label><select value={editing.status||"Published"} onChange={e=>setEditing({...editing,status:e.target.value})}><option>Draft</option><option>Published</option></select></div><div className="field"><label className="label">Tag miskonsepsi</label><input value={(editing.misconceptionTags||[]).join(", ")} onChange={e=>setEditing({...editing,misconceptionTags:e.target.value.split(",").map(x=>x.trim()).filter(Boolean)})} placeholder="EXPONENT_AS_MULTIPLICATION"/></div></div><div className="field"><label className="label">Pembahasan</label><textarea rows="3" value={editing.explanation} onChange={e=>setEditing({...editing,explanation:e.target.value})}/></div>
       <div className="actions"><button className="btn" onClick={()=>setEditing(null)}>Batal</button><button className="btn-primary" onClick={save}>Simpan Soal</button></div>
     </div></div>}
   </div>;

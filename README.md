@@ -1,26 +1,81 @@
-# AC-ITS E-Comic — Cloud Integrated v6
+# AC-ITS E-Comic — UAT v12
 
-## Perubahan utama
-- E-Comic guru tersimpan di Firestore `ecomic_comics`.
-- Siswa menerima update materi secara realtime melalui Firestore `onSnapshot`.
-- Materi Published difilter berdasarkan jenjang, kelas, dan sekolah siswa.
-- Data demo comic/soal lokal dibersihkan dari baseline baru.
-- Bank Soal guru tersedia di menu `Bank Soal`.
-- Soal dapat diberi persamaan matematika menggunakan LaTeX + KaTeX.
-- Panel E-Comic juga dapat diberi persamaan dan akan dirender saat dibaca siswa.
-- Soal disimpan di Firestore `ecomic_questions` dan disinkronkan realtime.
-- Media gambar tetap menggunakan adapter media yang ada; saat Firebase Storage tersedia, adapter dapat dipindahkan ke Storage tanpa mengubah model comic.
+Versi ini disiapkan untuk **uji coba seluruh lini utama** platform E-Comic adaptive learning.
 
-## Firebase yang diperlukan
-1. Firebase Authentication: Email/Password aktif untuk akun nyata.
-2. Firestore aktif.
-3. Firestore rules sementara harus mengizinkan pengguna terautentikasi membaca/menulis collection yang dipakai.
-4. Firebase Storage tidak diperlukan untuk fitur cloud-content/equation pada versi ini.
+## Fitur yang sudah dibuat fungsional
 
-## Tes integrasi
-1. Buat/login akun guru yang mempunyai `school`.
-2. Guru buat E-Comic, isi episode/panel, lalu `Published` dan simpan.
-3. Login akun siswa yang mempunyai `educationLevel`, `grade`, dan `school` yang sama.
-4. Buka `Materi E-Comic`. Materi yang baru dipublish seharusnya muncul tanpa perlu memasukkan data manual ke siswa.
-5. Di `Bank Soal`, buat soal dan masukkan persamaan seperti `2^3 = 8` atau `\\frac{x+1}{2}`.
-6. Buka `Latihan` sebagai siswa pada jenjang/kelas yang sesuai.
+### Siswa
+- Registrasi: nama, email, jenjang, sekolah, kelas, rombel.
+- Login dan sapaan menggunakan nama akun pendaftar.
+- Library E-Comic berdasarkan status Published + jenjang + kelas + sekolah.
+- Comic Reader: panel, gambar, narasi, dialog, persamaan KaTeX, tokoh, materi, Tutor, kuis cepat, progress, episode, mode baca.
+- Aktivitas membaca disimpan ke student model dan memberi XP.
+- Latihan adaptif berbasis mastery.
+- Diagnosis jawaban + AI explanation.
+- Ujian bertimer + hasil + pencatatan attempt.
+- Progress mastery konsep.
+- Ranking kelas.
+- Badge dinamis.
+- Refleksi tersimpan.
+- Presensi tersimpan.
+- Profil + bergabung/pindah kelas dengan Kode Akses.
+
+### Guru
+- Dashboard konten dan jumlah siswa nyata.
+- Kelola E-Comic: metadata, cover, episode, panel, gambar, narasi, dialog, persamaan, tokoh, concept mapping, Publish.
+- Preview E-Comic dari workspace guru.
+- Bank Soal: CRUD, jenjang/kelas, persamaan, konsep, level, status, tag miskonsepsi.
+- Knowledge Base CRUD untuk konteks AI.
+- Nilai Siswa dengan filter jenjang/sekolah/kelas/rombel.
+- Progress per Soal dari attempt siswa.
+- Analitik mastery, distribusi kemampuan, tren attempt, miskonsepsi aktif, konsep prioritas.
+- Peringkat kelas.
+- Jawaban & waktu ujian.
+- Refleksi siswa.
+- Kode Akses kelas.
+- Presensi siswa.
+
+## Data & sinkronisasi
+
+- Firestore dipakai sebagai sumber data utama saat Firebase aktif.
+- Local storage dipakai sebagai fallback development.
+- Student model disimpan pada `studentModels/{uid}`.
+- Attempt pada `attempts`.
+- Learning event pada `learningEvents`.
+- Refleksi pada `reflections`.
+- Presensi pada `attendance`.
+- Hasil ujian pada `examResults`.
+- Kode kelas pada `classAccessCodes`.
+- Knowledge base pada `knowledgeBase`.
+- Media development disimpan melalui `ecomic_media` dengan fallback IndexedDB; struktur media dapat dipindahkan ke Firebase Storage tanpa mengubah struktur E-Comic.
+
+## Paket Uji Coba
+
+Dashboard Guru memiliki tombol **Buat Paket Uji Coba**. Tombol tersebut membuat contoh E-Comic Published + episode/panel + persamaan + tokoh + bank soal sehingga seluruh alur dapat diuji tanpa menunggu konten final.
+
+## Firebase
+
+Pastikan:
+- Authentication → Email/Password aktif.
+- Firestore aktif.
+- Environment variables Firebase sudah benar pada `.env` / Vercel.
+- Firestore Rules yang sekarang masih ditujukan untuk **UAT authenticated users**, bukan production hardening.
+
+Firebase Storage/Blaze belum menjadi syarat untuk UAT media versi ini.
+
+## Menjalankan lokal
+
+```bash
+npm install
+npm run dev
+```
+
+Build:
+
+```bash
+npm run build
+```
+
+## Checklist
+
+Lihat `docs/UAT-CHECKLIST.md` untuk skenario pengujian end-to-end.
