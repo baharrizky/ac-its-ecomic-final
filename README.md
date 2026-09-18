@@ -79,3 +79,7 @@ npm run build
 ## Checklist
 
 Lihat `docs/UAT-CHECKLIST.md` untuk skenario pengujian end-to-end.
+
+## AI UAT — Gemini
+
+AI provider utama UAT adalah Gemini melalui `/api/tutor`. Lihat `docs/AI-SETUP.md` dan `README-AI-UAT.md`.
