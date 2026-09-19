@@ -56,24 +56,23 @@ function buildTutorPrompt(message, context, history = []) {
   const compact = buildContext(context);
   const recent = (history || [])
     .filter(item => item && (item.role === "user" || item.role === "assistant"))
-    .slice(-8)
-    .map(item => ({ role: item.role, text: clampText(item.text, 1200) }));
+    .slice(-4)
+    .map(item => ({ role: item.role, text: clampText(item.text, 700) }));
 
+  // Keep the multimodal tutor prompt deliberately small. The panel image is
+  // the primary visual source; metadata is supporting context only.
   return [
-    "Kamu adalah AI Tutor matematika dalam platform AC-ITS E-Comic untuk siswa SMP/SMA Indonesia.",
-    "Peranmu adalah tutor, bukan mesin pemberi jawaban.",
-    "Gunakan bahasa Indonesia yang santai, hangat, jelas, dan sesuai usia siswa.",
-    "Untuk persamaan matematika, jangan tampilkan kode LaTeX mentah atau delimiter matematika LaTeX kepada siswa. Gunakan notasi yang langsung terbaca, misalnya 2 ÷ 3, x², a/b, atau kalimat seperti dua per tiga.",
-    "Gunakan konteks E-Comic yang diberikan sebagai sumber utama.",
-    "Jika gambar panel tersedia, gambar adalah sumber visual utama. Sebelum menjawab, amati gambar dan gunakan informasi yang benar-benar terlihat di dalamnya (teks pada gambar, judul, ilustrasi, objek, diagram, ekspresi, tata letak, atau simbol). Bedakan apa yang terlihat dari narasi/dialog/metadata. Jika gambar tidak menunjukkan materi yang sedang dipelajari, katakan demikian dan jelaskan bahwa panel tersebut merupakan bagian pendahuluan atau konteks jika itu memang terlihat. Jangan mengarang detail yang tidak terlihat.",
-    "Jika siswa meminta jawaban langsung, jangan langsung memberikan jawaban akhir. Arahkan kembali ke materi/panel, berikan satu hint kecil, lalu ajukan pertanyaan penuntun.",
-    "Jika siswa salah memahami konsep, jelaskan letak konsep yang perlu diperbaiki tanpa mempermalukan siswa.",
-    "Jika siswa sudah memahami konsep, berikan tantangan kecil atau arahkan ke latihan berikutnya.",
-    "Jangan mengarang isi comic, rumus, atau informasi yang tidak ada pada konteks.",
-    "Jika konteks tidak cukup, katakan bagian apa yang kurang dan minta siswa menjelaskan bagian yang sedang dibaca.",
-    `KONTEKS PEMBELAJARAN:\n${JSON.stringify(compact, null, 2)}`,
-    `RIWAYAT CHAT TERAKHIR:\n${JSON.stringify(recent, null, 2)}`,
-    `PERTANYAAN SISWA:\n${clampText(message, 3000)}`
+    "Kamu adalah AI Tutor matematika untuk siswa Indonesia.",
+    "Jawab sebagai tutor yang hangat, singkat, jelas, dan interaktif.",
+    "Jika ada gambar panel, AMATI GAMBAR TERLEBIH DAHULU. Sebutkan hanya hal yang benar-benar terlihat.",
+    "Jangan menganggap metadata konsep sebagai sesuatu yang pasti terlihat pada gambar.",
+    "Jika panel hanya pengantar/cerita, katakan bahwa panel itu berfungsi sebagai konteks dan jangan memaksakan materi matematika ke dalamnya.",
+    "Jika siswa meminta jawaban soal secara langsung, beri satu petunjuk dan satu pertanyaan penuntun sebelum jawaban akhir.",
+    "Jangan gunakan LaTeX mentah. Gunakan x², a/b, 2 ÷ 3, dan notasi yang mudah dibaca.",
+    "Jangan mengarang detail.",
+    `KONTEKS: ${JSON.stringify(compact)}`,
+    `RIWAYAT: ${JSON.stringify(recent)}`,
+    `PERTANYAAN: ${clampText(message, 2000)}`
   ].join("\n\n");
 }
 
@@ -276,7 +275,9 @@ async function callGemini(prompt, options = {}) {
       }
       const text = extractGeminiText(data);
       if (!text) {
-        const e = new Error(`Gemini tidak mengembalikan teks (finishReason: ${data?.candidates?.[0]?.finishReason || "unknown"}).`);
+        const finishReason = data?.candidates?.[0]?.finishReason || "unknown";
+        const blockReason = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishMessage || "";
+        const e = new Error(`Gemini tidak mengembalikan teks (finishReason: ${finishReason}${blockReason ? `, ${blockReason}` : ""}).`);
         e.code = "AI_EMPTY_RESPONSE"; e.provider = "gemini"; e.latencyMs = latencyMs;
         lastError = e;
         if (attempt >= DEFAULT_RETRIES) throw e;
@@ -358,15 +359,38 @@ export default async function handler(req, res) {
     // the actual panel image as a data URL, so the server never needs to
     // understand cloud-media:// references. This keeps Tutor independent
     // from the newer Interactions API while still using Gemini vision.
-    const response = await callAI(buildTutorPrompt(message, tutorContext, history), {
-      imageData: body.imageData || "",
-      imageMime: body.imageMime || "",
-      imageUrl: tutorContext.imageUrl,
-      imageExpected: Boolean(body.imageData || tutorContext.imageUrl),
-      thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low",
-      maxOutputTokens: 1400
-    });
-    return json(res, 200, { reply: response.text, ai: true, meta: response.meta });
+    // Tutor intentionally uses a separate, conservative model path. This
+    // keeps multimodal tutoring independent from the heavier correction /
+    // recommendation flows and avoids Gemini 3 thinking/output edge cases.
+    const tutorModel = process.env.GEMINI_TUTOR_MODEL || FALLBACK_MODEL || "gemini-2.5-flash";
+    let response;
+    try {
+      response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
+        model: tutorModel,
+        imageData: body.imageData || "",
+        imageMime: body.imageMime || "",
+        imageUrl: tutorContext.imageUrl,
+        imageExpected: Boolean(body.imageData || tutorContext.imageUrl),
+        maxOutputTokens: 800
+      });
+    } catch (primaryError) {
+      // One deterministic fallback to the configured primary model. No retry
+      // storm: the endpoint either returns a reply or a concrete diagnostic.
+      if (DEFAULT_MODEL !== tutorModel) {
+        response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
+          model: DEFAULT_MODEL,
+          imageData: body.imageData || "",
+          imageMime: body.imageMime || "",
+          imageUrl: tutorContext.imageUrl,
+          imageExpected: Boolean(body.imageData || tutorContext.imageUrl),
+          maxOutputTokens: 800,
+          thinkingLevel: /^gemini-3\./i.test(DEFAULT_MODEL) ? "low" : undefined
+        });
+      } else {
+        throw primaryError;
+      }
+    }
+    return json(res, 200, { reply: response.text, ai: true, meta: { ...response.meta, tutorModel } });
   } catch (error) {
     console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });
     const status = error?.code === "AI_NOT_CONFIGURED" ? 503 : 502;
