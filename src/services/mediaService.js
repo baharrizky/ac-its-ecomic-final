@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
-import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { db, storage, auth, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 
 const DB_NAME = "ac-its-ecomic-media-v2";
 const STORE_NAME = "media";
@@ -62,8 +63,30 @@ export async function saveLocalMedia(file, meta = {}) {
   if (!file.type.startsWith("image/")) throw new Error("File harus berupa gambar.");
   if (file.size > MAX_FILE_BYTES) throw new Error("Ukuran gambar maksimal 8 MB.");
 
-  // Firestore dipakai sebagai penyimpanan sementara lintas-browser.
-  // Ini menghindari ketergantungan Firebase Storage/Blaze saat development.
+  // PRIMARY: Firebase Storage.
+  // Gambar disimpan sebagai file, bukan Base64 di Firestore. Ini membuat preview,
+  // sinkronisasi lintas perangkat, dan AI image input jauh lebih stabil.
+  if (firebaseEnabled && storage && await ensureFirebaseAuth()) {
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+      const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const uid = auth?.currentUser?.uid || "anonymous";
+      const comicId = String(meta.comicId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const kind = String(meta.kind || "image").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const ext = blob.type === "image/webp" ? "webp" : blob.type === "image/jpeg" ? "jpg" : "png";
+      const objectRef = storageRef(storage, `ecomic-media/${uid}/${comicId}/${kind}/${id}.${ext}`);
+      const uploaded = await uploadBytes(objectRef, blob, { contentType: blob.type, cacheControl: "public,max-age=31536000,immutable" });
+      const url = await getDownloadURL(uploaded.ref);
+      return url;
+    } catch (error) {
+      console.warn("Firebase Storage upload failed; trying legacy media fallback:", error);
+    }
+  }
+
+  // LEGACY fallback: keep the existing Firestore/IndexedDB mechanism so the
+  // editor still works when Storage rules/configuration are not ready.
   if (firebaseEnabled && db && await ensureFirebaseAuth()) {
     try {
       const dataUrl = await fileToDataUrl(file);
@@ -75,8 +98,7 @@ export async function saveLocalMedia(file, meta = {}) {
       });
       return `cloud-media://${id}`;
     } catch (error) {
-      // Jangan diam-diam kehilangan upload. Jika Firebase gagal, simpan lokal sebagai fallback.
-      console.warn("Cloud media unavailable, using browser fallback:", error);
+      console.warn("Legacy cloud media unavailable, using browser fallback:", error);
     }
   }
 

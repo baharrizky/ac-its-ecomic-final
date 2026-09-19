@@ -90,3 +90,18 @@ AI provider utama UAT adalah Gemini melalui `/api/tutor`. Lihat `docs/AI-SETUP.m
 - Operational AI details remain server-side.
 - Student-facing copy uses learning language instead of backend terminology.
 - Tutor, practice, and reader layouts keep normal page scrolling on desktop Windows and mobile.
+
+## Media storage fix (V20)
+New uploads use Firebase Storage as the primary media backend. Firestore is not used to store image Base64 for new uploads. The returned Firebase Storage download URL is stored directly in the comic/panel data, so MediaImage and Gemini can consume a normal HTTPS image URL.
+
+Required Firebase Storage rules for the current authenticated prototype:
+```
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /ecomic-media/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
