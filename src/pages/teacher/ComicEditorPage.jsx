@@ -5,7 +5,7 @@ import ConceptPicker from "../../components/common/ConceptPicker";
 import { saveLocalMedia } from "../../services/mediaService";
 import EquationEditor from "../../components/common/EquationEditor";
 
-export default function ComicEditorPage({ comic, onBack, onSave }) {
+export default function ComicEditorPage({ comic, onBack, onSave, session }) {
   const [draft, setDraft] = useState(() => comic ? JSON.parse(JSON.stringify(comic)) : null);
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [uploading, setUploading] = useState("");
@@ -40,7 +40,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
     if (!file) return;
     setUploading("cover"); setMessage("");
     try {
-      const ref = await saveLocalMedia(file, { kind:"cover", comicId:draft.id });
+      const ref = await saveLocalMedia(file, { kind:"cover", comicId:draft.id, ownerTeacherUid:session?.uid||"", assignedClassIds:draft.assignedClassIds||[] });
       setDraft(d=>({...d,coverUrl:ref}));
       setMessage("Cover berhasil diunggah.");
     } catch (err) { setMessage(err.message || "Gagal mengunggah cover."); }
@@ -54,7 +54,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
     if (!panel) return;
     setUploading(panel.id); setMessage("");
     try {
-      const ref = await saveLocalMedia(file, { kind:"panel", comicId:draft.id, episodeId:ep.id, panelId:panel.id });
+      const ref = await saveLocalMedia(file, { kind:"panel", comicId:draft.id, episodeId:ep.id, panelId:panel.id, ownerTeacherUid:session?.uid||"", assignedClassIds:draft.assignedClassIds||[] });
       patchPanel(pi,{imageUrl:ref});
       setMessage(`Gambar ${panel.title} berhasil diunggah.`);
     } catch (err) { setMessage(err.message || "Gagal mengunggah gambar panel."); }

@@ -1,4 +1,39 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath":"role","order":"ASCENDING"},
+        {"fieldPath":"classTeacherUid","order":"ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "classes_v3",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath":"school","order":"ASCENDING"},
+        {"fieldPath":"educationLevel","order":"ASCENDING"},
+        {"fieldPath":"grade","order":"ASCENDING"},
+        {"fieldPath":"rombel","order":"ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "ecomic_comics_v2",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath":"status","order":"ASCENDING"},
+        {"fieldPath":"assignedClassIds","arrayConfig":"CONTAINS"}
+      ]
+    },
+    {
+      "collectionGroup": "ecomic_questions_v2",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath":"status","order":"ASCENDING"},
+        {"fieldPath":"assignedClassIds","arrayConfig":"CONTAINS"}
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

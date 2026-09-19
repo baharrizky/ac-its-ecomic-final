@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, onSnapshot, setDoc } from "firebase/firestore";
+import { collection, doc, getDocs, onSnapshot, setDoc, query, where } from "firebase/firestore";
 import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 
 const COLLECTION = "ecomic_comics_v2";
@@ -91,10 +91,13 @@ export function mergeComicCollections(localComics = [], cloudComics = []) {
   return ids.map(id => mergeComic(localById.get(id), cloudById.get(id)));
 }
 
-export async function loadCloudComics() {
+export async function loadCloudComics(session = null) {
   if (!firebaseEnabled || !db || !(await ensureFirebaseAuth())) return null;
   try {
-    const snap = await getDocs(collection(db, COLLECTION));
+    let source = collection(db, COLLECTION);
+    if (session?.role === "teacher") source = query(collection(db, COLLECTION), where("ownerTeacherUid", "==", session.uid));
+    else if (session?.role === "student") { if (!session.classId) return []; source = query(collection(db, COLLECTION), where("status", "==", "Published"), where("assignedClassIds", "array-contains", session.classId)); }
+    const snap = await getDocs(source);
     return snap.docs.map(d => normalizeComic({ id: d.id, ...d.data() }));
   } catch (error) {
     console.warn("Cloud comic read failed:", error);
@@ -114,10 +117,13 @@ export async function saveCloudComic(comic) {
   }
 }
 
-export async function subscribeCloudComics(onChange) {
+export async function subscribeCloudComics(session, onChange) {
   if (!firebaseEnabled || !db || !(await ensureFirebaseAuth())) return () => {};
+  let source = collection(db, COLLECTION);
+  if (session?.role === "teacher") source = query(collection(db, COLLECTION), where("ownerTeacherUid", "==", session.uid));
+  else if (session?.role === "student") { if (!session.classId) return () => {}; source = query(collection(db, COLLECTION), where("status", "==", "Published"), where("assignedClassIds", "array-contains", session.classId)); }
   const unsubscribe = onSnapshot(
-    collection(db, COLLECTION),
+    source,
     snap => onChange(snap.docs.map(d => normalizeComic({ id: d.id, ...d.data() }))),
     error => console.warn("Cloud comic subscription failed:", error)
   );

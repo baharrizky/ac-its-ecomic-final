@@ -3,7 +3,7 @@ import {
 } from "firebase/firestore";
 import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 
-const LOCAL_PREFIX = "ac-its-ecomic-data-v2:";
+const LOCAL_PREFIX = "ac-its-ecomic-data-v3-access:";
 
 function localRead(key, fallback = []) {
   try {
@@ -83,18 +83,18 @@ export async function recordLearningEvent(event = {}) {
 export async function listLearningEvents(filters = {}) {
   if (await ready()) {
     try {
-      const snap = await getDocs(collection(db, "learningEvents_v2"));
+      const constraints = [];
+      if (filters.uid) constraints.push(where("uid", "==", filters.uid));
+      if (filters.teacherUid) constraints.push(where("teacherUid", "==", filters.teacherUid));
+      if (filters.classId) constraints.push(where("classId", "==", filters.classId));
+      const snap = await getDocs(constraints.length ? query(collection(db, "learningEvents_v2"), ...constraints) : collection(db, "learningEvents_v2"));
       let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value != null && value !== "") rows = rows.filter(r => r[key] === value);
-      });
+      Object.entries(filters).forEach(([key, value]) => { if (value != null && value !== "" && !["uid","teacherUid","classId"].includes(key)) rows = rows.filter(r => r[key] === value); });
       return rows.sort((a,b)=>String(b.createdAt||b.endedAt||b.startedAt||"").localeCompare(String(a.createdAt||a.endedAt||a.startedAt||"")));
     } catch (e) { console.warn("learning event list failed", e); }
   }
   let rows = localRead("learningEvents_v2", []);
-  Object.entries(filters).forEach(([key, value]) => {
-    if (value != null && value !== "") rows = rows.filter(r => r[key] === value);
-  });
+  Object.entries(filters).forEach(([key, value]) => { if (value != null && value !== "") rows = rows.filter(r => r[key] === value); });
   return rows.sort((a,b)=>String(b.createdAt||b.endedAt||b.startedAt||"").localeCompare(String(a.createdAt||a.endedAt||a.startedAt||"")));
 }
 
@@ -111,15 +111,12 @@ export async function recordAttempt(attempt = {}) {
 export async function listAttempts(filters = {}) {
   if (await ready()) {
     try {
-      const snap = await getDocs(collection(db, "attempts_v2"));
-      let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      Object.entries(filters).forEach(([key, value]) => { if (value != null && value !== "") rows = rows.filter(r => r[key] === value); });
-      return rows.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-    } catch (e) { console.warn("attempt list failed", e); }
+      const constraints=[]; if(filters.uid)constraints.push(where("uid","==",filters.uid)); if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid)); if(filters.classId)constraints.push(where("classId","==",filters.classId));
+      const snap=await getDocs(constraints.length?query(collection(db,"attempts_v2"),...constraints):collection(db,"attempts_v2"));
+      let rows=snap.docs.map(d=>({id:d.id,...d.data()})); Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!==""&&!['uid','teacherUid','classId'].includes(key))rows=rows.filter(r=>r[key]===value)}); return rows.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+    } catch(e){console.warn("attempt list failed",e)}
   }
-  let rows = localRead("attempts_v2", []);
-  Object.entries(filters).forEach(([key, value]) => { if (value != null && value !== "") rows = rows.filter(r => r[key] === value); });
-  return rows;
+  let rows=localRead("attempts_v2",[]); Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!=="")rows=rows.filter(r=>r[key]===value)}); return rows;
 }
 
 export async function listStudentModels() {
@@ -143,12 +140,9 @@ export async function saveReflection(reflection = {}) {
   return false;
 }
 
-export async function listReflections() {
-  if (await ready()) {
-    try { const snap = await getDocs(collection(db, "reflections_v2")); return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))); }
-    catch (e) { console.warn("reflection list failed", e); }
-  }
-  return localRead("reflections_v2", []);
+export async function listReflections(filters = {}) {
+  if(await ready()){try{const constraints=[];if(filters.uid)constraints.push(where("uid","==",filters.uid));if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid));if(filters.classId)constraints.push(where("classId","==",filters.classId));const snap=await getDocs(constraints.length?query(collection(db,"reflections_v2"),...constraints):collection(db,"reflections_v2"));return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));}catch(e){console.warn("reflection list failed",e)}}
+  let rows=localRead("reflections_v2",[]);Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!=="")rows=rows.filter(r=>r[key]===value)});return rows;
 }
 
 export async function saveAttendance(item = {}) {
@@ -162,17 +156,8 @@ export async function saveAttendance(item = {}) {
 }
 
 export async function listAttendance(filters = {}) {
-  if (await ready()) {
-    try {
-      const snap = await getDocs(collection(db, "attendance_v2"));
-      let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      Object.entries(filters).forEach(([key, value]) => { if (value != null && value !== "") rows = rows.filter(r => r[key] === value); });
-      return rows.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
-    } catch (e) { console.warn("attendance list failed", e); }
-  }
-  let rows = localRead("attendance_v2", []);
-  Object.entries(filters).forEach(([key, value]) => { if (value != null && value !== "") rows = rows.filter(r => r[key] === value); });
-  return rows;
+  if(await ready()){try{const constraints=[];if(filters.uid)constraints.push(where("uid","==",filters.uid));if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid));if(filters.classId)constraints.push(where("classId","==",filters.classId));const snap=await getDocs(constraints.length?query(collection(db,"attendance_v2"),...constraints):collection(db,"attendance_v2"));let rows=snap.docs.map(d=>({id:d.id,...d.data()}));Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!==""&&!['uid','teacherUid','classId'].includes(key))rows=rows.filter(r=>r[key]===value)});return rows.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));}catch(e){console.warn("attendance list failed",e)}}
+  let rows=localRead("attendance_v2",[]);Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!=="")rows=rows.filter(r=>r[key]===value)});return rows;
 }
 
 export async function createClassAccessCode(data = {}) {
@@ -233,9 +218,9 @@ export async function saveExamResult(result = {}) {
   return false;
 }
 
-export async function listExamResults() {
-  if(await ready()){try{const snap=await getDocs(collection(db,"examResults_v2"));return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));}catch(e){console.warn("exam list failed",e);}}
-  return localRead("examResults_v2",[]);
+export async function listExamResults(filters = {}) {
+  if(await ready()){try{const constraints=[];if(filters.uid)constraints.push(where("uid","==",filters.uid));if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid));if(filters.classId)constraints.push(where("classId","==",filters.classId));const snap=await getDocs(constraints.length?query(collection(db,"examResults_v2"),...constraints):collection(db,"examResults_v2"));return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));}catch(e){console.warn("exam list failed",e)}}
+  let rows=localRead("examResults_v2",[]);Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!=="")rows=rows.filter(r=>r[key]===value)});return rows;
 }
 
 export async function findClassAccessCode(code) {

@@ -23,7 +23,7 @@ const ROMBEL_OPTIONS = Array.from({length:12},(_,i)=>String(i+1));
 
 export default function RegistrationPage({onRegister,onBack}){
   const [role,setRole]=useState("student");
-  const [form,setForm]=useState({name:"",email:"",password:"",confirmPassword:"",educationLevel:"SMA",grade:"X",rombel:"1",school:""});
+  const [form,setForm]=useState({name:"",email:"",password:"",confirmPassword:"",educationLevel:"SMA",grade:"X",rombel:"1",school:"",teacherInviteCode:""});
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
   const set=(key,value)=>setForm(f=>({...f,[key]:value}));
@@ -51,12 +51,12 @@ export default function RegistrationPage({onRegister,onBack}){
           <div className="register-grid"><div><label className="label">Jenjang</label><select value={form.educationLevel} onChange={e=>{const level=e.target.value;setForm(f=>({...f,educationLevel:level,grade:GRADE_OPTIONS[level][0],school:"",rombel:"1"}))}}><option>SMP</option><option>SMA</option></select></div><div><label className="label">Tingkat kelas</label><select value={form.grade} onChange={e=>set("grade",e.target.value)}>{GRADE_OPTIONS[form.educationLevel].map(g=><option key={g}>{g}</option>)}</select></div></div>
           <label className="label">Sekolah</label><select required value={form.school} onChange={e=>set("school",e.target.value)}><option value="">Pilih sekolah {form.educationLevel}</option>{SCHOOL_OPTIONS[form.educationLevel].map(school=><option key={school} value={school}>{school}</option>)}<option value="Sekolah lainnya">Sekolah lainnya</option></select>
           {role==="student" && <div className="register-grid"><div><label className="label">Rombel</label><select value={form.rombel} onChange={e=>set("rombel",e.target.value)}>{ROMBEL_OPTIONS.map(n=><option key={n} value={n}>{form.grade} {n}</option>)}</select></div><div><label className="label">Contoh kelas</label><div className="field-preview">{form.grade} {form.rombel}</div></div></div>}
-          <label className="label">Password</label><input type="password" value={form.password} onChange={e=>set("password",e.target.value)} placeholder="Minimal 6 karakter" autoComplete="new-password"/>
+          {role==="teacher" && <><label className="label">Kode Akses Admin</label><input value={form.teacherInviteCode} onChange={e=>set("teacherInviteCode",e.target.value.toUpperCase())} placeholder="Masukkan kode dari Admin" autoComplete="off"/><div className="subtle" style={{marginTop:-6,marginBottom:10}}>Guru hanya dapat mendaftar dengan kode yang diterbitkan Admin.</div></>}<label className="label">Password</label><input type="password" value={form.password} onChange={e=>set("password",e.target.value)} placeholder="Minimal 6 karakter" autoComplete="new-password"/>
           <label className="label">Konfirmasi password</label><input type="password" value={form.confirmPassword} onChange={e=>set("confirmPassword",e.target.value)} placeholder="Ulangi password" autoComplete="new-password"/>
           {error&&<div className="login-error">{error}</div>}
           <button className="btn-primary login-submit" disabled={loading}><UserPlus size={16}/> {loading?"Membuat akun...":"Buat Akun"}</button>
         </form>
-        <div className="register-note">Dengan membuat akun, profil jenjang/kelas siswa akan digunakan untuk memfilter E-Comic yang tersedia.</div>
+        <div className="register-note">Siswa yang memilih sekolah, tingkat, dan rombel akan otomatis dihubungkan ke kelas Guru yang sesuai jika kelas tersebut sudah dibuka. Guru hanya dapat mendaftar menggunakan kode dari Admin.</div>
       </div>
     </div>
     <div className="login-footer">AC-ITS E-Comic · Secure role-based learning space</div>

@@ -29,3 +29,34 @@ This build starts from a clean application data namespace. It keeps Firebase Aut
 
 ## Important
 The build does not delete legacy Firestore collections. They remain untouched for safety. The application simply starts from new `_v2` namespaces.
+
+## Access Control Update
+
+The current build adds a dedicated Admin zone and ownership-based access control.
+
+### One-time Admin bootstrap
+1. Firebase Console -> Authentication -> Users -> Add user.
+2. Create the first admin email/password.
+3. Firestore -> `users` -> create document with the Firebase UID:
+```json
+{
+  "name": "Administrator",
+  "email": "admin@example.com",
+  "role": "admin",
+  "subtitle": "Administrator"
+}
+```
+4. Login through the new `Login Admin` option.
+5. Admin creates teacher registration codes.
+
+### Enrollment
+- Teacher registration requires an Admin-issued code.
+- Teacher creates their own classes in `Kelas Saya`.
+- Student selects school, level, grade, and rombel during registration.
+- If an open class matches, the student is automatically linked to that class and teacher.
+- On later student login, the app retries automatic class linking if the class was created after the student account.
+
+### Ownership
+Teacher-owned content includes `ownerTeacherUid` and `assignedClassIds`.
+Student activity records include `teacherUid` and `classId`.
+Firestore rules enforce teacher/student/admin boundaries; UI filtering is not the security boundary.
