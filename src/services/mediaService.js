@@ -1,6 +1,5 @@
 import { doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { db, storage, auth, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
+import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 
 const DB_NAME = "ac-its-ecomic-media-v2";
 const STORE_NAME = "media";
@@ -29,14 +28,33 @@ function fileToDataUrl(file, maxWidth = 1800, quality = 0.82) {
       const image = new Image();
       image.onerror = () => reject(new Error("File gambar tidak valid."));
       image.onload = () => {
-        const scale = Math.min(1, maxWidth / image.width);
+        const scale = Math.min(1, maxWidth / Math.max(1, image.width));
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(image.width * scale));
         canvas.height = Math.max(1, Math.round(image.height * scale));
         const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Browser tidak dapat memproses gambar."));
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-        let dataUrl = canvas.toDataURL("image/webp", quality);
-        if (dataUrl.length > MAX_CLOUD_DATA_URL_BYTES) dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+
+        // Keep the Firestore document comfortably below its 1 MiB document limit.
+        let q = quality;
+        let dataUrl = canvas.toDataURL("image/webp", q);
+        while (dataUrl.length > MAX_CLOUD_DATA_URL_BYTES && q > 0.42) {
+          q -= 0.08;
+          dataUrl = canvas.toDataURL("image/webp", q);
+        }
+        if (dataUrl.length > MAX_CLOUD_DATA_URL_BYTES) {
+          q = 0.70;
+          dataUrl = canvas.toDataURL("image/jpeg", q);
+          while (dataUrl.length > MAX_CLOUD_DATA_URL_BYTES && q > 0.40) {
+            q -= 0.06;
+            dataUrl = canvas.toDataURL("image/jpeg", q);
+          }
+        }
+        if (dataUrl.length > MAX_CLOUD_DATA_URL_BYTES) {
+          reject(new Error("Gambar terlalu besar setelah kompresi. Coba gambar dengan resolusi lebih kecil."));
+          return;
+        }
         resolve(dataUrl);
       };
       image.src = reader.result;
@@ -44,7 +62,6 @@ function fileToDataUrl(file, maxWidth = 1800, quality = 0.82) {
     reader.readAsDataURL(file);
   });
 }
-
 async function saveBrowserMedia(file, meta, dataUrl) {
   const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const dbLocal = await openDb();
@@ -63,49 +80,37 @@ export async function saveLocalMedia(file, meta = {}) {
   if (!file.type.startsWith("image/")) throw new Error("File harus berupa gambar.");
   if (file.size > MAX_FILE_BYTES) throw new Error("Ukuran gambar maksimal 8 MB.");
 
-  // PRIMARY: Firebase Storage.
-  // Gambar disimpan sebagai file, bukan Base64 di Firestore. Ini membuat preview,
-  // sinkronisasi lintas perangkat, dan AI image input jauh lebih stabil.
-  if (firebaseEnabled && storage && await ensureFirebaseAuth()) {
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      const response = await fetch(dataUrl);
-      const blob = await response.blob();
-      const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const uid = auth?.currentUser?.uid || "anonymous";
-      const comicId = String(meta.comicId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_");
-      const kind = String(meta.kind || "image").replace(/[^a-zA-Z0-9_-]/g, "_");
-      const ext = blob.type === "image/webp" ? "webp" : blob.type === "image/jpeg" ? "jpg" : "png";
-      const objectRef = storageRef(storage, `ecomic-media/${uid}/${comicId}/${kind}/${id}.${ext}`);
-      const uploaded = await uploadBytes(objectRef, blob, { contentType: blob.type, cacheControl: "public,max-age=31536000,immutable" });
-      const url = await getDownloadURL(uploaded.ref);
-      return url;
-    } catch (error) {
-      console.warn("Firebase Storage upload failed; trying legacy media fallback:", error);
+  // Production path: one source of truth in Firestore. Do not silently fall
+  // back to browser-only media when Firebase is configured, otherwise a
+  // published comic can contain an image reference that only exists on the
+  // teacher's computer.
+  if (firebaseEnabled && db) {
+    if (!(await ensureFirebaseAuth())) {
+      throw new Error("Autentikasi Firebase belum siap. Silakan coba unggah lagi.");
     }
-  }
-
-  // LEGACY fallback: keep the existing Firestore/IndexedDB mechanism so the
-  // editor still works when Storage rules/configuration are not ready.
-  if (firebaseEnabled && db && await ensureFirebaseAuth()) {
+    const dataUrl = await fileToDataUrl(file);
+    const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      const dataUrl = await fileToDataUrl(file);
-      if (dataUrl.length > MAX_CLOUD_DATA_URL_BYTES) throw new Error("Gambar terlalu besar setelah kompresi. Gunakan gambar di bawah ~4 MB atau turunkan resolusi.");
-      const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       await setDoc(doc(db, "ecomic_media", id), {
-        id, dataUrl, name: file.name, type: file.type, size: file.size,
-        createdAt: new Date().toISOString(), ...meta
+        id,
+        dataUrl,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        createdAt: new Date().toISOString(),
+        ...meta
       });
       return `cloud-media://${id}`;
     } catch (error) {
-      console.warn("Legacy cloud media unavailable, using browser fallback:", error);
+      console.error("Cloud media upload failed", error);
+      throw new Error("Gambar gagal disimpan ke Firebase. Pastikan login Firebase aktif lalu coba lagi.");
     }
   }
 
+  // Local-only mode is used only when Firebase is not configured.
   const dataUrl = await fileToDataUrl(file);
   return saveBrowserMedia(file, meta, dataUrl);
 }
-
 export async function getLocalMedia(ref) {
   if (!ref) return null;
   if (ref.startsWith("cloud-media://")) {

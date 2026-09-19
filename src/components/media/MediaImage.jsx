@@ -1,63 +1,36 @@
 import React, { useEffect, useState } from "react";
 import { getLocalMedia } from "../../services/mediaService";
 
-const resolvedCache = new Map();
-const pendingCache = new Map();
+const cache = new Map();
+const pending = new Map();
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function resolveMediaWithRetry(src, attempts = 6) {
+async function resolve(src) {
   if (!src) return null;
   if (!src.startsWith("local-media://") && !src.startsWith("cloud-media://")) return src;
-
-  if (resolvedCache.has(src)) return resolvedCache.get(src);
-  if (pendingCache.has(src)) return pendingCache.get(src);
-
-  const promise = (async () => {
-    let lastValue = null;
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      try {
-        lastValue = await getLocalMedia(src);
-        if (lastValue) {
-          const resolved = typeof lastValue === "string" ? lastValue : URL.createObjectURL(lastValue);
-          resolvedCache.set(src, resolved);
-          return resolved;
-        }
-      } catch (error) {
-        // Keep retrying because Firebase auth can finish initializing shortly
-        // after the reader itself has already rendered.
-        if (import.meta.env?.DEV) console.debug("Media resolve retry", attempt + 1, error);
-      }
-      await sleep(250 * Math.min(attempt + 1, 4));
-    }
-    return lastValue;
-  })();
-
-  pendingCache.set(src, promise);
-  try {
-    return await promise;
-  } finally {
-    pendingCache.delete(src);
-  }
+  if (cache.has(src)) return cache.get(src);
+  if (pending.has(src)) return pending.get(src);
+  const promise = getLocalMedia(src).then((value) => {
+    if (!value) return null;
+    const resolved = typeof value === "string" ? value : URL.createObjectURL(value);
+    cache.set(src, resolved);
+    return resolved;
+  });
+  pending.set(src, promise);
+  try { return await promise; }
+  finally { pending.delete(src); }
 }
 
 export default function MediaImage({ src, alt = "", className = "", style, fallback = null, loadingFallback = null }) {
-  const [resolved, setResolved] = useState(() => resolvedCache.get(src) || "");
-  const [loading, setLoading] = useState(Boolean(src && !resolvedCache.has(src)));
+  const [resolved, setResolved] = useState(() => cache.get(src) || (src && !src.startsWith("local-media://") && !src.startsWith("cloud-media://") ? src : ""));
+  const [loading, setLoading] = useState(Boolean(src && (src.startsWith("local-media://") || src.startsWith("cloud-media://")) && !cache.has(src)));
 
   useEffect(() => {
     let alive = true;
-    setLoading(Boolean(src && !resolvedCache.has(src)));
-    setResolved(resolvedCache.get(src) || "");
-
-    if (!src) {
-      setLoading(false);
-      return () => {};
-    }
-
-    resolveMediaWithRetry(src).then((value) => {
+    if (!src) { setResolved(""); setLoading(false); return () => {}; }
+    const direct = !src.startsWith("local-media://") && !src.startsWith("cloud-media://");
+    if (direct) { setResolved(src); setLoading(false); return () => {}; }
+    setLoading(true);
+    resolve(src).then(value => {
       if (!alive) return;
       setResolved(value || "");
       setLoading(false);
@@ -66,11 +39,10 @@ export default function MediaImage({ src, alt = "", className = "", style, fallb
       setResolved("");
       setLoading(false);
     });
-
     return () => { alive = false; };
   }, [src]);
 
   if (resolved) return <img src={resolved} alt={alt} className={className} style={style} />;
-  if (loading) return loadingFallback || <div className="reader-art-fallback"><span>Memuat komik...</span></div>;
+  if (loading) return loadingFallback || <div className="reader-art-fallback"><span>Memuat gambar…</span></div>;
   return fallback;
 }

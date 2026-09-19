@@ -11,7 +11,7 @@ async function testModel(key, selectedModel) {
     const response = await fetch(url, {
       method:"POST",
       headers:{"Content-Type":"application/json","x-goog-api-key":key},
-      body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with exactly: AI E-Comic OK"}]}],generationConfig:{maxOutputTokens:80,temperature:0}}),
+      body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with exactly: AI E-Comic OK"}]}],generationConfig:{maxOutputTokens:80}}),
       signal:controller.signal
     });
     const data = await response.json().catch(()=>({}));

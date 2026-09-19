@@ -78,7 +78,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
       </div>
       <div className="page-kicker">Comic Editor</div>
       <h1 className="page-title">{draft.title}</h1>
-      <p className="page-desc">Editor konten guru. Gambar dikompresi dan disimpan melalui media service; Firebase Storage dapat diaktifkan kemudian tanpa mengubah struktur konten.</p>
+      <p className="page-desc">Editor konten guru. Gambar dikompresi di browser dan disimpan sebagai media pembelajaran yang dapat dibaca kembali oleh siswa dan AI Tutor.</p>
 
       {message && <div className={`upload-note ${message.includes("berhasil")||message.includes("tersimpan")?"success":"error"}`}>{message}</div>}
 
