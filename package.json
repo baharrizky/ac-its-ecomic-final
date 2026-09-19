@@ -10,10 +10,10 @@
   },
   "dependencies": {
     "firebase": "^12.1.0",
+    "katex": "^0.16.22",
     "lucide-react": "^0.468.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "katex": "^0.16.22"
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.2",
