@@ -1,7 +1,7 @@
 import { collection, doc, getDocs, onSnapshot, setDoc } from "firebase/firestore";
 import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 
-const COLLECTION = "ecomic_comics";
+const COLLECTION = "ecomic_comics_v2";
 
 function normalizePanel(panel = {}, index = 0) {
   return {

@@ -1,14 +1,12 @@
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  sendPasswordResetEmail, signOut, updateProfile } from "firebase/auth";
 import { collection, doc, getDocs, getDoc, query, setDoc, where } from "firebase/firestore";
 import { auth, db, firebaseEnabled } from "./firebaseService";
 
-const KEY = "ac-its-ecomic-session-v3";
-const ACCOUNTS_KEY = "ac-its-ecomic-registered-accounts-v1";
+const KEY = "ac-its-ecomic-session-v4-clean";
+const ACCOUNTS_KEY = "ac-its-ecomic-registered-accounts-v2-clean";
 
-const accounts = {
-  teacher: { email: "guru@acits.id", password: "guru123", role: "teacher", name: "Aulia Fadhilah Rinaldi", subtitle: "Guru" },
-  student: { email: "siswa@acits.id", password: "siswa123", role: "student", name: "Ahmad", subtitle: "Siswa", educationLevel: "SMA", grade: "X" },
-};
+const accounts = {};
 
 function readRegisteredAccounts() {
   try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "[]"); } catch { return []; }
@@ -166,4 +164,24 @@ export async function logout(){
   localStorage.removeItem(KEY);
   if (firebaseEnabled && auth) { try { await signOut(auth); } catch {} }
 }
+export async function resetPassword(email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) return { ok:false, message:"Masukkan email terlebih dahulu." };
+  if (!(firebaseEnabled && auth)) {
+    return { ok:false, message:"Fitur lupa sandi memerlukan koneksi Firebase Authentication." };
+  }
+  try {
+    await sendPasswordResetEmail(auth, normalizedEmail);
+    return { ok:true, message:"Link reset password sudah dikirim ke email tersebut. Periksa inbox atau folder spam." };
+  } catch (error) {
+    const code = error?.code || "";
+    const map = {
+      "auth/user-not-found":"Email belum terdaftar.",
+      "auth/invalid-email":"Format email tidak valid.",
+      "auth/too-many-requests":"Terlalu banyak permintaan. Coba lagi beberapa saat lagi."
+    };
+    return { ok:false, message:map[code] || `Gagal mengirim link reset (${code || "unknown"}).` };
+  }
+}
+
 export const demoAccounts = accounts;

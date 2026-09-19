@@ -1,9 +1,8 @@
 import React from "react";
 import { BookOpen, MessageCircle, PencilLine, Trophy, Flame, Star, ArrowRight, Play } from "lucide-react";
 import Badge from "../../components/common/Badge";
-import { concepts } from "../../data/demoData";
 
-export default function StudentDashboard({state,navigate,session}) {
+export default function StudentDashboard({state,navigate,session,concepts=[]}) {
   const weakest = Object.entries(state.studentModel.concepts).sort((a,b)=>a[1].mastery-b[1].mastery)[0];
   const published = state.comics.filter(c=>c.status==="Published" && (!session?.educationLevel || c.educationLevel===session.educationLevel) && (!session?.grade || String(c.grade)===String(session.grade)) && (!session?.school || !c.school || c.school===session.school));
   const completedPanels = Object.keys(state.studentModel.completedPanels||{}).length;
@@ -61,7 +60,7 @@ export default function StudentDashboard({state,navigate,session}) {
           <div className="recommend-card">
             <div className="recommend-icon"><PencilLine size={20}/></div>
             <span>Konsep yang perlu diperkuat</span>
-            <strong>{weakest?.[0]} · {concepts[weakest?.[0]]?.name || weakest?.[0]}</strong>
+            <strong>{weakest?.[0]} · {concepts.find(c=>c.id===weakest?.[0])?.name || weakest?.[0]}</strong>
             <div className="progress-label"><span>Mastery</span><b>{Math.round((weakest?.[1]?.mastery||0)*100)}%</b></div>
             <div className="progress"><span style={{width:`${(weakest?.[1]?.mastery||0)*100}%`}}/></div>
             <button className="primary-btn small full" onClick={()=>navigate("practice")}>Mulai Latihan</button>

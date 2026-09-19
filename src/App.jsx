@@ -1,11 +1,11 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
 import { Menu, X, GraduationCap, LayoutDashboard, MessageCircle, BookOpen, PencilLine, ClipboardList, TrendingUp, Trophy, Award, MessageSquareText, Settings, BarChart3, ListChecks, Clock3, Database, KeyRound, CheckCircle2, Activity, FileInput, LogOut, Search, Bell } from "lucide-react";
-import { concepts } from "./data/demoData";
 import { loadState,saveState } from "./services/storageService";
 import { createComic,updateComic } from "./services/comicService";
 import { loadCloudComics,saveCloudComic,subscribeCloudComics,mergeComicCollections } from "./services/cloudComicService";
 import { saveCloudQuestion,deleteCloudQuestion,subscribeCloudQuestions } from "./services/cloudQuestionService";
 import { getSession,logout,getRegisteredStudents,updateUserProfile } from "./services/authService";
+import { listConcepts } from "./services/conceptService";
 import { getTutorReply, correctAnswerWithAI, recommendNextQuestion, getTeacherRecommendation } from "./services/tutorService";
 import { diagnoseAnswer } from "./engine/diagnosisEngine";
 import { updateMastery } from "./engine/masteryEngine";
@@ -33,7 +33,7 @@ import BadgePage from "./pages/student/BadgePage";
 import ReflectionPage from "./pages/student/ReflectionPage";
 import AttendancePage from "./pages/student/AttendancePage";
 
-const emptyModel=()=>createEmptyStudentModel(concepts);
+const emptyModel=(conceptList=[])=>createEmptyStudentModel(Object.fromEntries((conceptList||[]).map(c=>[c.id,c])));
 const fallback={comics:[],questions:[],studentModel:emptyModel(),screen:null,selectedComicId:null,currentReaderContext:null};
 
 export default function App(){
@@ -49,6 +49,7 @@ export default function App(){
  const screenTimerRef=useRef({screen:null,startedAt:null});
  const [studentReflections,setStudentReflections]=useState([]);
  const [studentAttendance,setStudentAttendance]=useState([]);
+ const [availableConcepts,setAvailableConcepts]=useState([]);
 
  useEffect(()=>saveState(state),[state]);
 
@@ -56,7 +57,7 @@ export default function App(){
  useEffect(()=>{
    if(!session?.uid || session.role!=="student") return;
    try {
-     const raw=localStorage.getItem(`acits-tutor-history:${session.uid}`);
+     const raw=localStorage.getItem(`acits-tutor-history-v2:${session.uid}`);
      const saved=raw?JSON.parse(raw):[];
      setTutorMessages(Array.isArray(saved)&&saved.length?saved.slice(-80):[tutorGreeting]);
    } catch { setTutorMessages([tutorGreeting]); }
@@ -64,8 +65,18 @@ export default function App(){
 
  useEffect(()=>{
    if(!session?.uid || session.role!=="student") return;
-   try { localStorage.setItem(`acits-tutor-history:${session.uid}`,JSON.stringify(tutorMessages.slice(-80))); } catch {}
+   try { localStorage.setItem(`acits-tutor-history-v2:${session.uid}`,JSON.stringify(tutorMessages.slice(-80))); } catch {}
  },[tutorMessages,session?.uid,session?.role]);
+
+ const handleClearTutorHistory=()=>{
+   setTutorMessages([tutorGreeting]);
+   if(session?.uid){
+     try {
+       localStorage.removeItem(`acits-tutor-history-v2:${session.uid}`);
+       localStorage.setItem(`acits-tutor-history-cleared-v2:${session.uid}`,String(Date.now()));
+     } catch {}
+   }
+ };
 
  const refreshTeacherData=async()=>{
    const [rawStudents,models,attempts,reflections,attendance,examResults,events]=await Promise.all([getRegisteredStudents(),listStudentModels(),listAttempts(),listReflections(),listAttendance(),listExamResults(),listLearningEvents()]);
@@ -74,7 +85,13 @@ export default function App(){
    setRegisteredStudents(students);setTeacherData({models,attempts,reflections,attendance,examResults,events});
    return students;
  };
- useEffect(()=>{if(!session)return; (async()=>{setRegisteredStudents(await getRegisteredStudents()); if(session.role==="teacher") await refreshTeacherData();})();},[session?.role]);
+ useEffect(()=>{if(!session)return; (async()=>{
+   setRegisteredStudents(await getRegisteredStudents());
+   const conceptsNow=await listConcepts();
+   setAvailableConcepts(conceptsNow);
+   if(session.role==="teacher") await refreshTeacherData();
+ })();},[session?.role,session?.uid]);
+ useEffect(()=>{let alive=true;(async()=>{const items=await listConcepts();if(alive)setAvailableConcepts(items);})();return()=>{alive=false}},[state.screen]);
 
  useEffect(()=>{
    if(!session?.uid || session.role!=="student") return;
@@ -107,13 +124,15 @@ export default function App(){
    if(!session?.uid) return;
    let alive=true;let unsubscribe=()=>{};
    (async()=>{
-     const model=await getStudentModel(session.uid,emptyModel());
+     const model=await getStudentModel(session.uid,emptyModel(availableConcepts));
      if(alive)setState(s=>({...s,studentModel:{...s.studentModel,...model}}));
      unsubscribe=await subscribeStudentModel(session.uid,model2=>{if(alive)setState(s=>({...s,studentModel:{...s.studentModel,...model2}}));});
      const [refs,att,events]=await Promise.all([listReflections(),listAttendance(),listLearningEvents({uid:session.uid})]);
      if(alive){
        setStudentReflections(refs);setStudentAttendance(att);
-       const history=events.filter(e=>e.type==="tutor_message"&&e.payload?.message).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))).flatMap(e=>[
+       let clearedAt=0;
+       try { clearedAt=Number(localStorage.getItem(`acits-tutor-history-cleared-v2:${session.uid}`)||0); } catch {}
+       const history=events.filter(e=>e.type==="tutor_message"&&e.payload?.message&&(!clearedAt||!e.createdAt||new Date(e.createdAt).getTime()>clearedAt)).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))).flatMap(e=>[
          {role:"user",text:String(e.payload.message)},
          ...(e.payload.reply?[{role:"assistant",text:String(e.payload.reply)}]:[])
        ]).slice(-80);
@@ -138,7 +157,10 @@ export default function App(){
  const selectedComic=useMemo(()=>state.comics.find(c=>c.id===state.selectedComicId)||null,[state.comics,state.selectedComicId]);
  const visibleStudentQuestions=useMemo(()=>state.questions.filter(q=>q.status!=="Draft" && (!q.educationLevel||q.educationLevel===session?.educationLevel) && (!q.grade||q.grade===session?.grade)),[state.questions,session?.educationLevel,session?.grade]);
  const leaderboard=useMemo(()=>registeredStudents.filter(s=>!session?.school||!s.school||s.school===session.school).filter(s=>!session?.grade||s.grade===session.grade).filter(s=>!session?.rombel||s.rombel===session.rombel),[registeredStudents,session?.school,session?.grade,session?.rombel]);
- const teacherVisibleStudents=useMemo(()=>registeredStudents.filter(s=>!session?.school||!s.school||s.school===session.school),[registeredStudents,session?.school]);
+ const teacherVisibleStudents=useMemo(()=>registeredStudents.filter(s=>{
+   if(s.classTeacherUid) return s.classTeacherUid===session?.uid;
+   return !session?.school||!s.school||s.school===session.school;
+ }),[registeredStudents,session?.school,session?.uid]);
  const visibleStudentIds=useMemo(()=>new Set(teacherVisibleStudents.map(s=>s.uid)),[teacherVisibleStudents]);
  const teacherAttempts=useMemo(()=>teacherData.attempts.filter(a=>!visibleStudentIds.size||visibleStudentIds.has(a.uid)),[teacherData.attempts,visibleStudentIds]);
  const teacherReflections=useMemo(()=>teacherData.reflections.filter(r=>!visibleStudentIds.size||visibleStudentIds.has(r.uid)),[teacherData.reflections,visibleStudentIds]);
@@ -149,7 +171,7 @@ export default function App(){
  const navigate=(screen,comicId=null,readerContext=null)=>{setState(s=>({...s,screen,selectedComicId:typeof comicId==="string"?comicId:(screen==="tutor"?s.selectedComicId:comicId),currentReaderContext:readerContext||s.currentReaderContext}));setDrawerOpen(false)};
  if(!session)return authPage==="register"?<RegistrationPage onBack={()=>setAuthPage("login")} onRegister={s=>{setSession(s);setState(x=>({...x,screen:s.role==="teacher"?"teacher-dashboard":"student-dashboard"}));setAuthPage("login")}}/>:<LoginPage onRegisterClick={()=>setAuthPage("register")} onLogin={s=>{setSession(s);setState(x=>({...x,screen:s.role==="teacher"?"teacher-dashboard":"student-dashboard"}));}}/>;
  const onLogout=async()=>{await logout();setSession(null);setAuthPage("login");};
- const handleCreate=form=>{const c=createComic({...form,school:session?.school||"",createdBy:session?.uid||"current-teacher"});setState(s=>({...s,comics:[c,...s.comics],selectedComicId:c.id,screen:"comic-editor"}));saveCloudComic(c);};
+ const handleCreate=form=>{const c=createComic({...form,school:session?.school||"",rombel:form.rombel||session?.rombel||"",classTeacherUid:session?.uid||"",createdBy:session?.uid||"current-teacher"});setState(s=>({...s,comics:[c,...s.comics],selectedComicId:c.id,screen:"comic-editor"}));saveCloudComic(c);};
  const handleSaveComic=async u=>{const updated={...u,school:u.school||session?.school||"",createdBy:u.createdBy||session?.uid||"current-teacher",updatedAt:new Date().toISOString().slice(0,10)};setState(s=>({...s,comics:updateComic(s.comics,updated)}));return saveCloudComic(updated);};
  const handleSaveQuestion=async q=>{const payload={...q,createdBy:session?.uid||"current-teacher",updatedAt:new Date().toISOString()};setState(s=>({...s,questions:[...s.questions.filter(x=>x.id!==q.id),payload]}));await saveCloudQuestion(payload);};
  const handleDeleteQuestion=async id=>{setState(s=>({...s,questions:s.questions.filter(q=>q.id!==id)}));await deleteCloudQuestion(id);};
@@ -157,7 +179,7 @@ export default function App(){
  const touchActivity=(model,bonus=0)=>{const now=new Date();const today=now.toISOString().slice(0,10);const last=model.lastActivityAt?.slice?.(0,10);let streak=model.streak||0;if(last!==today){if(last){const prev=new Date(last);const diff=Math.round((Date.UTC(now.getFullYear(),now.getMonth(),now.getDate())-Date.UTC(prev.getFullYear(),prev.getMonth(),prev.getDate()))/86400000);streak=diff===1?Math.max(1,streak+1):1;}else streak=1;}return {...model,streak,xp:(model.xp||0)+bonus,lastActivityAt:now.toISOString()};};
  const handleAnswer=async(q,aIndex,modeName="practice",durationSeconds=0)=>{
    const baseline=diagnoseAnswer(q,aIndex);
-   const ai=await correctAnswerWithAI({question:q,selectedAnswer:q.options?.[aIndex],correctAnswer:q.options?.[q.answer],baselineDiagnosis:baseline,context:{educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school,studentMastery:state.studentModel?.concepts?.[q.conceptId]?.mastery||0,conceptId:q.conceptId,conceptName:concepts[q.conceptId]?.name||q.conceptId}});
+   const ai=await correctAnswerWithAI({question:q,selectedAnswer:q.options?.[aIndex],correctAnswer:q.options?.[q.answer],baselineDiagnosis:baseline,context:{educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school,studentMastery:state.studentModel?.concepts?.[q.conceptId]?.mastery||0,conceptId:q.conceptId,conceptName:availableConcepts.find(c=>c.id===q.conceptId)?.name||q.conceptId}});
    const d={...baseline,...ai,explanation:ai?.explanation||baseline.explanation,misconceptionTag:ai?.misconceptionTag??baseline.misconceptionTag,confidence:Number(ai?.confidence??baseline.confidence)};
    const next=touchActivity(updateMastery(state.studentModel,q.conceptId,d),d.correct?10:3);
    setState(s=>({...s,studentModel:next}));
@@ -192,17 +214,12 @@ export default function App(){
  const handleAttendance=async r=>{await saveAttendance(r);setStudentAttendance(await listAttendance());if(session?.uid)await recordLearningEvent({uid:session.uid,type:"attendance"});return true;};
  const handleExamComplete=async(result,eligible,answers)=>{let next=touchActivity(state.studentModel, result.score>=80?30:10);for(let i=0;i<eligible.length;i++){const q=eligible[i];if(answers[i]==null)continue;const d=diagnoseAnswer(q,answers[i]);next=updateMastery(next,q.conceptId,d);await recordAttempt({uid:session.uid,name:session.name,questionId:q.id,conceptId:q.conceptId,selectedIndex:answers[i],correct:d.correct,score:d.correct?100:0,mode:"exam",educationLevel:session.educationLevel,grade:session.grade,school:session.school,examId:`exam-${Date.now()}`});}next.examScore=result.score;setState(s=>({...s,studentModel:next}));await saveStudentModel(session.uid,next);await saveExamResult({...result,uid:session.uid,name:session.name,school:session.school,grade:session.grade,rombel:session.rombel});await refreshTeacherData();};
  const handleAIExplain=({message,context})=>handleTutor(message,context);
- const handleJoinAccess=async(code)=>{const found=await findClassAccessCode(code);if(!found)return {ok:false,message:"Kode akses tidak ditemukan atau sudah nonaktif."};const patch={school:found.school||"",educationLevel:found.educationLevel||session.educationLevel,grade:found.grade||session.grade,rombel:found.rombel||session.rombel};await updateUserProfile(session.uid,patch);setSession(s=>({...s,...patch}));setState(s=>({...s,currentReaderContext:null}));return {ok:true,message:`Berhasil terhubung ke ${patch.school||"kelas"} · ${patch.grade||""} ${patch.rombel||""}.`};};
- const seedTestPack=async()=>{
-   const comic=createComic({title:"Paket Uji Coba — Eksponen",description:"Konten uji coba untuk menguji E-Comic, persamaan, Tutor AI, kuis cepat, dan adaptive practice.",subject:"Eksponen",educationLevel:session.educationLevel||"SMA",grade:session.grade||"X",className:session.rombel?`${session.grade||"X"} ${session.rombel}`:"",school:session.school||"",status:"Published",concepts:["E1","E2"] ,createdBy:session.uid||"teacher"});
-   comic.episodes=[{id:`ep-${Date.now()}-1`,title:"Mengenal Pola",description:"Memahami eksponen dari pola perkalian berulang.",order:1,concepts:["E1"],panels:[{id:`p-${Date.now()}-1`,order:1,title:"Pola Perkalian",narration:"Jumlah bakteri menjadi dua kali lipat setiap jam.",dialogue:"Jika awalnya 2 bakteri, berapa setelah 3 jam?",equation:"2^3=8",conceptIds:["E1"],characters:["Sari","Riko"],imageUrl:""},{id:`p-${Date.now()}-2`,order:2,title:"Menuliskan Bentuk Pangkat",narration:"Perkalian berulang dapat ditulis dengan bentuk pangkat.",dialogue:"2 × 2 × 2 dapat ditulis sebagai 2^3.",equation:"2\times2\times2=2^3=8",conceptIds:["E1"],characters:["Sari"]}]},{id:`ep-${Date.now()}-2`,title:"Perkalian Eksponen",description:"Mengenal aturan perkalian dengan basis sama.",order:2,concepts:["E2"],panels:[{id:`p-${Date.now()}-3`,order:1,title:"Aturan Perkalian",narration:"Jika basis sama, pangkat dapat dijumlahkan.",dialogue:"Bagaimana dengan 2^2 × 2^3?",equation:"2^2\times2^3=2^5",conceptIds:["E2"],characters:["Riko"]}]}];
-   const qs=[{id:`q-${Date.now()}-1`,question:"Bentuk perkalian berulang dari 2^3 adalah ...",equation:"2^3",options:["2+2+2","2×2×2","2×3","3×3"],answer:1,explanation:"Pangkat 3 berarti basis 2 dikalikan dengan dirinya sendiri tiga kali.",conceptId:"E1",level:1,difficulty:1,educationLevel:session.educationLevel||"SMA",grade:session.grade||"X",status:"Published",misconceptionTags:["EXPONENT_AS_MULTIPLICATION"]},{id:`q-${Date.now()}-2`,question:"Hasil dari 2^2 × 2^3 adalah ...",equation:"2^2\times2^3",options:["2^5","2^6","4^5","4^6"],answer:0,explanation:"Untuk basis sama, pangkat dijumlahkan.",conceptId:"E2",level:2,difficulty:2,educationLevel:session.educationLevel||"SMA",grade:session.grade||"X",status:"Published",misconceptionTags:["EXPONENT_MULTIPLY_POWERS"]}];
-   setState(s=>({...s,comics:[comic,...s.comics],questions:[...s.questions,...qs],selectedComicId:comic.id,screen:"comic-editor"}));await saveCloudComic(comic);for(const q of qs)await saveCloudQuestion(q);
- };
+ const handleJoinAccess=async(code)=>{const found=await findClassAccessCode(code);if(!found)return {ok:false,message:"Kode akses tidak ditemukan atau sudah nonaktif."};const patch={school:found.school||"",educationLevel:found.educationLevel||session.educationLevel,grade:found.grade||session.grade,rombel:found.rombel||session.rombel,classTeacherUid:found.teacherUid||"",classAccessCodeId:found.id||"",classTeacherName:found.teacherName||""};await updateUserProfile(session.uid,patch);setSession(s=>({...s,...patch}));setState(s=>({...s,currentReaderContext:null}));return {ok:true,message:`Berhasil terhubung ke ${patch.school||"kelas"} · ${patch.grade||""} ${patch.rombel||""}.`};};
+
  const teacherItems=[["teacher-dashboard","dashboard","Beranda"],["teacher-grades","grades","Nilai Siswa"],["analytics","analytics","Analitik"],["teacher-question-progress","question","Progress per Soal"],["teacher-ranking","rank","Peringkat"],["teacher-exam-times","time","Jawaban & Waktu Ujian"],["teacher-knowledge","knowledge","Knowledge Base"],["comic-management","comic","Kelola Materi E-Comic"],["question-bank","question","Bank Soal"],["teacher-reflections","reflection","Refleksi Siswa"],["teacher-access","access","Kode Akses"],["teacher-attendance","attendance","Presensi"],["teacher-activity","activity","Aktivitas Siswa"],["teacher-migration","migration","Data ITS"],["teacher-profile","profile","Profil"]];
  const studentItems=[["student-dashboard","dashboard","Dashboard"],["tutor","tutor","Tutor AI"],["comic-library","comic","Materi E-Comic"],["practice","practice","Latihan"],["exam","exam","Ujian"],["progress","progress","Progress"],["ranking","rank","Peringkat"],["badges","badge","Badge"],["reflection","reflection","Refleksi"],["attendance","attendance","Presensi"],["profile","profile","Profil"]];
- const renderTeacher=()=>{switch(state.screen){case"comic-management":return <ComicManagement comics={state.comics.filter(c=>!session.school||!c.school||c.school===session.school)} navigate={navigate} onCreate={handleCreate} onEdit={id=>navigate("comic-editor",id)}/>;case"comic-editor":return <ComicEditorPage comic={selectedComic} onBack={()=>navigate("comic-management")} onSave={handleSaveComic}/>;case"comic-preview":return <ComicReaderPage comic={selectedComic} studentModel={emptyModel()} questions={state.questions} navigate={navigate} session={session}/>;case"question-bank":return <QuestionBankPage questions={state.questions} onSave={handleSaveQuestion} onDelete={handleDeleteQuestion}/>;case"analytics":return <AnalyticsPage students={teacherVisibleStudents} models={teacherData.models} attempts={teacherAttempts}/>;case"teacher-grades":return <TeacherGrades students={teacherVisibleStudents} session={session} questions={state.questions} onRefresh={refreshTeacherData}/>;case"teacher-question-progress":return <TeacherQuestionProgress questions={state.questions} attempts={teacherAttempts}/>;case"teacher-ranking":return <TeacherRanking students={teacherVisibleStudents}/>;case"teacher-exam-times":return <TeacherExamTimes examResults={teacherExamResults} students={teacherVisibleStudents}/>;case"teacher-knowledge":return <TeacherKnowledge/>;case"teacher-reflections":return <TeacherReflections reflections={teacherReflections} students={teacherVisibleStudents}/>;case"teacher-access":return <TeacherAccess session={session}/>;case"teacher-attendance":return <TeacherAttendance records={teacherAttendance} students={teacherVisibleStudents}/>;case"teacher-activity":return <TeacherActivityPage students={teacherVisibleStudents} events={teacherLearningEvents} onRefresh={refreshTeacherData}/>;case"teacher-migration":return <TeacherMigrationPage session={session}/>;case"teacher-profile":return <TeacherProfile session={session}/>;default:return <TeacherDashboard state={state} navigate={navigate} students={teacherVisibleStudents} models={teacherData.models} attempts={teacherAttempts} events={teacherLearningEvents} session={session} onRefresh={refreshTeacherData} onSeedPack={seedTestPack} onAIRecommend={getTeacherRecommendation}/>} };
- const renderStudent=()=>{switch(state.screen){case"tutor":return <TutorPage comic={selectedComic} studentModel={state.studentModel} messages={tutorMessages} onSend={handleTutor} readerContext={state.currentReaderContext} session={session}/>;case"comic-library":return <ComicLibrary comics={state.comics} session={session} navigate={navigate}/>;case"comic-reader":return <ComicReaderPage comic={selectedComic} studentModel={state.studentModel} questions={visibleStudentQuestions} navigate={navigate} onPanelViewed={handleReaderProgress} onAnswer={handleAnswer} onAIExplain={handleAIExplain} onTutorSend={handleTutor} tutorMessages={tutorMessages} readerContext={state.currentReaderContext} session={session}/>;case"practice":return <PracticePage questions={visibleStudentQuestions} studentModel={state.studentModel} onAnswer={handleAnswer} onAIExplain={handleAIExplain}/>;case"exam":return <ExamPage questions={state.questions} session={session} onComplete={handleExamComplete}/>;case"progress":return <ProgressPage studentModel={state.studentModel}/>;case"ranking":return <RankingPage leaderboard={leaderboard} session={session}/>;case"badges":return <BadgePage studentModel={state.studentModel}/>;case"reflection":return <ReflectionPage session={session} reflections={studentReflections} onSave={handleReflection}/>;case"attendance":return <AttendancePage session={session} records={studentAttendance} onCheckIn={handleAttendance}/>;case"profile":return <ProfilePage session={session} onJoinAccess={handleJoinAccess}/>;default:return <StudentDashboard state={state} navigate={navigate} session={session}/>;} };
+ const renderTeacher=()=>{switch(state.screen){case"comic-management":return <ComicManagement comics={state.comics.filter(c=>!session.school||!c.school||c.school===session.school)} navigate={navigate} onCreate={handleCreate} onEdit={id=>navigate("comic-editor",id)}/>;case"comic-editor":return <ComicEditorPage comic={selectedComic} onBack={()=>navigate("comic-management")} onSave={handleSaveComic}/>;case"comic-preview":return <ComicReaderPage comic={selectedComic} studentModel={emptyModel(availableConcepts)} questions={state.questions} navigate={navigate} session={session}/>;case"question-bank":return <QuestionBankPage questions={state.questions} onSave={handleSaveQuestion} onDelete={handleDeleteQuestion}/>;case"analytics":return <AnalyticsPage students={teacherVisibleStudents} models={teacherData.models} attempts={teacherAttempts}/>;case"teacher-grades":return <TeacherGrades students={teacherVisibleStudents} session={session} questions={state.questions} onRefresh={refreshTeacherData}/>;case"teacher-question-progress":return <TeacherQuestionProgress questions={state.questions} attempts={teacherAttempts}/>;case"teacher-ranking":return <TeacherRanking students={teacherVisibleStudents}/>;case"teacher-exam-times":return <TeacherExamTimes examResults={teacherExamResults} students={teacherVisibleStudents}/>;case"teacher-knowledge":return <TeacherKnowledge/>;case"teacher-reflections":return <TeacherReflections reflections={teacherReflections} students={teacherVisibleStudents}/>;case"teacher-access":return <TeacherAccess session={session}/>;case"teacher-attendance":return <TeacherAttendance records={teacherAttendance} students={teacherVisibleStudents}/>;case"teacher-activity":return <TeacherActivityPage students={teacherVisibleStudents} events={teacherLearningEvents} onRefresh={refreshTeacherData}/>;case"teacher-migration":return <TeacherMigrationPage session={session}/>;case"teacher-profile":return <TeacherProfile session={session}/>;default:return <TeacherDashboard state={state} navigate={navigate} students={teacherVisibleStudents} models={teacherData.models} attempts={teacherAttempts} events={teacherLearningEvents} session={session} onRefresh={refreshTeacherData} onAIRecommend={getTeacherRecommendation}/>} };
+ const renderStudent=()=>{switch(state.screen){case"tutor":return <TutorPage comic={selectedComic} studentModel={state.studentModel} messages={tutorMessages} onSend={handleTutor} onClearHistory={handleClearTutorHistory} readerContext={state.currentReaderContext} session={session}/>;case"comic-library":return <ComicLibrary comics={state.comics} session={session} navigate={navigate}/>;case"comic-reader":return <ComicReaderPage comic={selectedComic} studentModel={state.studentModel} questions={visibleStudentQuestions} navigate={navigate} onPanelViewed={handleReaderProgress} onAnswer={handleAnswer} onAIExplain={handleAIExplain} onTutorSend={handleTutor} onClearHistory={handleClearTutorHistory} tutorMessages={tutorMessages} readerContext={state.currentReaderContext} session={session}/>;case"practice":return <PracticePage questions={visibleStudentQuestions} studentModel={state.studentModel} concepts={availableConcepts} onAnswer={handleAnswer} onAIExplain={handleAIExplain}/>;case"exam":return <ExamPage questions={state.questions} session={session} onComplete={handleExamComplete}/>;case"progress":return <ProgressPage studentModel={state.studentModel} concepts={availableConcepts}/>;case"ranking":return <RankingPage leaderboard={leaderboard} session={session}/>;case"badges":return <BadgePage studentModel={state.studentModel}/>;case"reflection":return <ReflectionPage session={session} reflections={studentReflections} onSave={handleReflection}/>;case"attendance":return <AttendancePage session={session} records={studentAttendance} onCheckIn={handleAttendance}/>;case"profile":return <ProfilePage session={session} onJoinAccess={handleJoinAccess}/>;default:return <StudentDashboard state={state} navigate={navigate} session={session} concepts={availableConcepts}/>;} };
  return <><FlexibleStyles/><div className="ac-app"><FlexibleSidebar open={drawerOpen} mode={mode} screen={state.screen} items={mode==="teacher"?teacherItems:studentItems} onNavigate={navigate} onLogout={onLogout} session={session} onClose={()=>setDrawerOpen(false)}/>{drawerOpen&&<button aria-label="Tutup menu" className="ecomic-drawer-backdrop" onClick={()=>setDrawerOpen(false)}/>}<div className="ac-main"><FlexibleTopbar mode={mode} session={session} onMenu={()=>setDrawerOpen(v=>!v)}/><main className="ac-content">{mode==="teacher"?renderTeacher():renderStudent()}</main></div></div></>;
 }
 

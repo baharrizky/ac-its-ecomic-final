@@ -1,4 +1,4 @@
-const KEY = "ac-its-ecomic-state-v4-integrated-content";
+const KEY = "ac-its-ecomic-state-v5-clean";
 
 export function loadState(fallback) {
   try {
@@ -6,13 +6,13 @@ export function loadState(fallback) {
     if (!raw) return fallback;
     const saved = JSON.parse(raw);
     return { ...fallback, ...saved };
-  } catch {
-    return fallback;
-  }
+  } catch { return fallback; }
 }
 
 export function saveState(state) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state));
-  } catch {}
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+}
+
+export function clearAppState() {
+  try { localStorage.removeItem(KEY); } catch {}
 }

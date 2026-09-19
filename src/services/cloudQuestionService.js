@@ -1,7 +1,7 @@
 import { collection, doc, onSnapshot, setDoc, deleteDoc } from "firebase/firestore";
 import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 
-const COLLECTION = "ecomic_questions";
+const COLLECTION = "ecomic_questions_v2";
 
 export async function saveCloudQuestion(question) {
   if (!firebaseEnabled || !db || !question?.id || !(await ensureFirebaseAuth())) return false;

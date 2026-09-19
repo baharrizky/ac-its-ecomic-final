@@ -1,14 +1,13 @@
 import React, { useMemo, useState } from "react";
 import Badge from "../../components/common/Badge";
 import { chooseNextActivity } from "../../engine/adaptiveEngine";
-import { concepts } from "../../data/demoData";
 import katex from "katex";
 import AIResponse from "../../components/common/AIResponse";
 import "katex/dist/katex.min.css";
 
 function renderEquation(value){ if(!value) return null; try{return katex.renderToString(value,{displayMode:true,throwOnError:false});}catch{return value;} }
 
-export default function PracticePage({ questions = [], studentModel, onAnswer, onAIExplain, onFinish }) {
+export default function PracticePage({ questions = [], studentModel, concepts = [], onAnswer, onAIExplain, onFinish }) {
   const published = questions.filter(q=>q.status !== "Draft");
   const recommendation = useMemo(()=>chooseNextActivity(studentModel,published),[studentModel,published]);
   const initial = recommendation.questionId ? published.find(q=>q.id===recommendation.questionId) : published[0];
@@ -25,7 +24,7 @@ export default function PracticePage({ questions = [], studentModel, onAnswer, o
   if(done) return <div><div className="page-kicker">Adaptive Practice</div><h1 className="page-title">Latihan selesai</h1><div className="card success-note"><strong>Bagus, sesi latihan selesai.</strong><span>Kamu sudah menyelesaikan {published.length ? Math.min(index+1,published.length) : 0} soal pada sesi ini.</span><button className="primary-btn small" style={{marginTop:12}} onClick={()=>{setDone(false);setIndex(0);setSelected(null);setDiagnosis(null);}}>Ulangi Latihan</button></div></div>;
 
   async function choose(i){ if(diagnosis) return; setSelected(i); const d=await onAnswer(q,i,"practice"); setDiagnosis(d); setAiReply(""); }
-  async function askAI(){ if(!diagnosis || !onAIExplain) return; setLoadingAI(true); try { const r=await onAIExplain({message:`Jelaskan mengapa jawaban ${String.fromCharCode(65+selected)} pada soal berikut ${diagnosis.correct?"benar":"belum tepat"}. Berikan langkah singkat dan tunjukkan konsep yang perlu diperhatikan.`, context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName:concepts[q.conceptId]?.name}}); setAiReply(r?.reply || "Belum ada penjelasan AI."); } finally { setLoadingAI(false); } }
+  async function askAI(){ if(!diagnosis || !onAIExplain) return; setLoadingAI(true); try { const r=await onAIExplain({message:`Jelaskan mengapa jawaban ${String.fromCharCode(65+selected)} pada soal berikut ${diagnosis.correct?"benar":"belum tepat"}. Berikan langkah singkat dan tunjukkan konsep yang perlu diperhatikan.`, context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName:concepts.find(c=>c.id===q.conceptId)?.name}}); setAiReply(r?.reply || "Belum ada penjelasan AI."); } finally { setLoadingAI(false); } }
   async function next(){
     const rec=diagnosis?.recommendation;
     if(rec?.questionId){
@@ -40,7 +39,7 @@ export default function PracticePage({ questions = [], studentModel, onAnswer, o
     <div className="page-kicker">Adaptive Practice</div><h1 className="page-title">Latihan Berjenjang</h1><p className="page-desc">Soal berikut dipilih berdasarkan hasil latihanmu dan tingkat penguasaan konsep. {recommendation.reason}</p>
     <div className="split" style={{marginTop:18}}>
       <section className="card">
-        <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><Badge tone="blue">{q.conceptId} · {concepts[q.conceptId]?.name||q.conceptId}</Badge><Badge tone={q.level<=1?"green":"amber"}>Level {q.level||q.difficulty||1}</Badge></div>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><Badge tone="blue">{q.conceptId} · {concepts.find(c=>c.id===q.conceptId)?.name||q.conceptId}</Badge><Badge tone={q.level<=1?"green":"amber"}>Level {q.level||q.difficulty||1}</Badge></div>
         <div className="question" style={{marginTop:18}}>{q.question}</div>
         {q.equation&&<div className="equation-preview" dangerouslySetInnerHTML={{__html:renderEquation(q.equation)}}/>}
         <div style={{marginTop:12}}>{q.options.map((o,i)=><button key={`${q.id}-${i}`} className="option" onClick={()=>choose(i)} disabled={!!diagnosis} style={selected===i?{borderColor:i===q.answer?"#10b981":"#ef4444",background:i===q.answer?"#ecfdf5":"#fff1f2"}:{}}>{String.fromCharCode(65+i)}. {o}</button>)}</div>

@@ -102,3 +102,13 @@ body{overscroll-behavior-y:auto}
   .reader-chat-form .btn-primary{padding:11px 16px;font-size:11px}
   .reader-chat-suggest{font-size:11px;margin-top:9px}
 }
+
+
+/* AI Tutor chat history controls */
+.tutor-header-row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.tutor-clear-btn{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;color:#7c2d12}
+.reader-tutor-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
+.reader-tutor-heading h3{margin-top:4px}
+.reader-chat-clear{display:inline-flex;align-items:center;gap:5px;border:1px solid #e5dff0;background:#fff;color:#6b5b7b;border-radius:9px;padding:7px 9px;font-size:10px;font-weight:700;cursor:pointer}
+.reader-chat-clear:hover{background:#f7f3fb;color:#5b21b6}
+@media(max-width:760px){.tutor-header-row{align-items:flex-start;flex-direction:column}.tutor-clear-btn{width:100%;justify-content:center}.reader-chat-clear{font-size:9px;padding:6px 8px}}
