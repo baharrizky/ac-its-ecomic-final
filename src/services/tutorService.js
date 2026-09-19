@@ -1,4 +1,38 @@
 const endpoint = "/api/tutor";
+import { getLocalMedia } from "./mediaService";
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("Gagal membaca gambar panel."));
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function resolveTutorImage(imageRef) {
+  const value = String(imageRef || "").trim();
+  if (!value) return "";
+  if (value.startsWith("data:image/")) return value;
+  if (!value.startsWith("local-media://") && !value.startsWith("cloud-media://")) return value;
+
+  const media = await getLocalMedia(value);
+  if (!media) throw new Error("Gambar panel tidak dapat diambil dari penyimpanan.");
+  if (typeof media === "string") {
+    if (!media.startsWith("data:image/")) throw new Error("Format gambar panel tidak valid.");
+    return media;
+  }
+  if (typeof Blob !== "undefined" && media instanceof Blob) return blobToDataUrl(media);
+  throw new Error("Format media panel tidak didukung.");
+}
+
+async function prepareTutorPayload(payload) {
+  const context = payload?.context || {};
+  const imageRef = context.imageUrl || "";
+  if (!imageRef || imageRef.startsWith("data:image/")) return payload;
+  const imageDataUrl = await resolveTutorImage(imageRef);
+  return { ...payload, context: { ...context, imageUrl: imageDataUrl } };
+}
 
 async function callEndpoint(payload, { retries = 1, timeoutMs = 22000 } = {}) {
   let lastError = null;
@@ -38,7 +72,8 @@ async function callEndpoint(payload, { retries = 1, timeoutMs = 22000 } = {}) {
 
 export async function getTutorReply({ message, context, history }) {
   try {
-    return await callEndpoint({ mode:"tutor", message, context, history }, { retries:1 });
+    const payload = await prepareTutorPayload({ mode:"tutor", message, context, history });
+    return await callEndpoint(payload, { retries:1 });
   } catch (error) {
     console.error("Tutor AI failed", error);
     const concept = context?.conceptName || context?.conceptId || "konsep yang sedang dipelajari";

@@ -64,7 +64,7 @@ function buildTutorPrompt(message, context, history = []) {
     "Gunakan bahasa Indonesia yang santai, hangat, jelas, dan sesuai usia siswa.",
     "Untuk persamaan matematika, jangan tampilkan kode LaTeX mentah atau delimiter matematika LaTeX kepada siswa. Gunakan notasi yang langsung terbaca, misalnya 2 ÷ 3, x², a/b, atau kalimat seperti dua per tiga.",
     "Gunakan konteks E-Comic yang diberikan sebagai sumber utama.",
-    "Jika tersedia gambar panel, perhatikan isi visualnya sebelum menjawab. Bedakan informasi yang benar-benar terlihat pada gambar dari narasi/dialog yang diberikan. Jangan mengarang detail gambar yang tidak terlihat atau tidak jelas.",
+    "Jika gambar panel tersedia, gambar adalah sumber visual utama. Sebelum menjawab, amati gambar dan gunakan informasi yang benar-benar terlihat di dalamnya (teks pada gambar, judul, ilustrasi, objek, diagram, ekspresi, tata letak, atau simbol). Bedakan apa yang terlihat dari narasi/dialog/metadata. Jika gambar tidak menunjukkan materi yang sedang dipelajari, katakan demikian dan jelaskan bahwa panel tersebut merupakan bagian pendahuluan atau konteks jika itu memang terlihat. Jangan mengarang detail yang tidak terlihat.",
     "Jika siswa meminta jawaban langsung, jangan langsung memberikan jawaban akhir. Arahkan kembali ke materi/panel, berikan satu hint kecil, lalu ajukan pertanyaan penuntun.",
     "Jika siswa salah memahami konsep, jelaskan letak konsep yang perlu diperbaiki tanpa mempermalukan siswa.",
     "Jika siswa sudah memahami konsep, berikan tantangan kecil atau arahkan ke latihan berikutnya.",
@@ -170,16 +170,28 @@ async function imageUrlToInlineData(imageUrl) {
 }
 
 async function buildGeminiParts(prompt, options = {}) {
-  const parts = [{ text: prompt }];
+  const parts = [];
+  let imageAttached = false;
+  let imageBytes = 0;
+  let imageMimeType = null;
   if (options.imageUrl) {
     try {
       const image = await imageUrlToInlineData(options.imageUrl);
-      if (image) parts.push({ inline_data: { mime_type: image.mimeType, data: image.data } });
+      if (image) {
+        // Put the image first so the model receives the visual context before the instruction.
+        parts.push({ inline_data: { mime_type: image.mimeType, data: image.data } });
+        imageAttached = true;
+        imageBytes = image.data.length;
+        imageMimeType = image.mimeType;
+      } else {
+        console.warn('AI_IMAGE_NOT_ATTACHED', { reason:'image_fetch_or_validation_failed' });
+      }
     } catch (error) {
-      console.warn('AI image context unavailable', { message:error?.message || 'unknown' });
+      console.warn('AI_IMAGE_NOT_ATTACHED', { message:error?.message || 'unknown' });
     }
   }
-  return parts;
+  parts.push({ text: prompt });
+  return { parts, imageAttached, imageBytes, imageMimeType };
 }
 
 async function callGemini(prompt, options = {}) {
@@ -199,8 +211,9 @@ async function callGemini(prompt, options = {}) {
   if (options.json) generationConfig.responseMimeType = "application/json";
   if (options.thinkingLevel) generationConfig.thinkingConfig = { thinkingLevel: options.thinkingLevel };
 
+  const builtParts = await buildGeminiParts(prompt, options);
   const payload = {
-    contents: [{ role: "user", parts: await buildGeminiParts(prompt, options) }],
+    contents: [{ role: "user", parts: builtParts.parts }],
     generationConfig
   };
   if (options.systemInstruction) payload.systemInstruction = { parts: [{ text: options.systemInstruction }] };
@@ -233,7 +246,7 @@ async function callGemini(prompt, options = {}) {
         await new Promise(r => setTimeout(r, backoffMs(attempt)));
         continue;
       }
-      return { text, meta: { provider: "gemini", model, attempts: attempt + 1, latencyMs, usage: data?.usageMetadata || null, finishReason: data?.candidates?.[0]?.finishReason || null } };
+      return { text, meta: { provider: "gemini", model, attempts: attempt + 1, latencyMs, usage: data?.usageMetadata || null, finishReason: data?.candidates?.[0]?.finishReason || null, imageAttached: builtParts.imageAttached, imageBytes: builtParts.imageBytes, imageMimeType: builtParts.imageMimeType } };
     } catch (e) {
       lastError = e;
       if (e?.name === "AbortError") e.code = "AI_TIMEOUT";
@@ -303,7 +316,7 @@ export default async function handler(req, res) {
     const history = Array.isArray(body.history) ? body.history : [];
     const tutorContext = body.context || {};
     const response = await callAI(buildTutorPrompt(message, tutorContext, history), { imageUrl:tutorContext.imageUrl, thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low", maxOutputTokens: 1400, temperature: 0.45 });
-    return json(res, 200, { reply: response.text, ai: true });
+    return json(res, 200, { reply: response.text, ai: true, meta: response.meta });
   } catch (error) {
     console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });
     const status = error?.code === "AI_NOT_CONFIGURED" ? 503 : 502;
