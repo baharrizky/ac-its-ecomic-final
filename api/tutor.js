@@ -141,21 +141,6 @@ function isRetryable(status) {
   return [408, 429, 500, 502, 503, 504].includes(Number(status));
 }
 
-function classifyAIError(error) {
-  const status = Number(error?.status || 0);
-  if (error?.code === "AI_NOT_CONFIGURED") return "NOT_CONFIGURED";
-  if (error?.code === "AI_TIMEOUT") return "TIMEOUT";
-  if (status === 400) return "BAD_REQUEST";
-  if (status === 401) return "INVALID_API_KEY";
-  if (status === 403) return "PERMISSION_OR_ACCESS_DENIED";
-  if (status === 404) return "MODEL_OR_ENDPOINT_NOT_FOUND";
-  if (status === 429) return "RATE_LIMIT_OR_QUOTA";
-  if (status >= 500) return "PROVIDER_SERVER_ERROR";
-  if (error?.code === "AI_INVALID_JSON") return "INVALID_AI_OUTPUT";
-  if (error?.code === "AI_EMPTY_RESPONSE") return "EMPTY_AI_RESPONSE";
-  return "UNKNOWN";
-}
-
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -189,7 +174,7 @@ async function buildGeminiParts(prompt, options = {}) {
   if (options.imageUrl) {
     try {
       const image = await imageUrlToInlineData(options.imageUrl);
-      if (image) parts.push({ inlineData: image });
+      if (image) parts.push({ inline_data: { mime_type: image.mimeType, data: image.data } });
     } catch (error) {
       console.warn('AI image context unavailable', { message:error?.message || 'unknown' });
     }
@@ -260,36 +245,13 @@ async function callGemini(prompt, options = {}) {
 }
 
 async function callAI(prompt, options = {}) {
-  if (DEFAULT_PROVIDER !== "gemini") {
-    throw Object.assign(new Error(`Provider ${DEFAULT_PROVIDER} belum diaktifkan pada build ini.`), { code: "AI_PROVIDER_UNSUPPORTED" });
-  }
-  let primaryError = null;
+  if (DEFAULT_PROVIDER !== "gemini") throw Object.assign(new Error(`Provider ${DEFAULT_PROVIDER} belum diaktifkan pada build ini.`), { code: "AI_PROVIDER_UNSUPPORTED" });
   try {
-    const result = await callGemini(prompt, options);
-    return { ...result, meta: { ...result.meta, fallbackUsed: false } };
+    return await callGemini(prompt, options);
   } catch (error) {
-    primaryError = error;
-    const retryableForFallback = [404, 408, 429, 500, 502, 503, 504].includes(Number(error?.status)) || error?.code === "AI_TIMEOUT";
-    if (retryableForFallback && DEFAULT_MODEL !== FALLBACK_MODEL) {
-      try {
-        const fallback = await callGemini(prompt, { ...options, model: FALLBACK_MODEL, thinkingLevel: undefined });
-        return {
-          ...fallback,
-          meta: {
-            ...fallback.meta,
-            fallbackUsed: true,
-            primaryModel: DEFAULT_MODEL,
-            primaryError: {
-              code: primaryError?.code || null,
-              status: primaryError?.status || null
-            }
-          }
-        };
-      } catch (fallbackError) {
-        fallbackError.primaryError = primaryError;
-        fallbackError.fallbackModel = FALLBACK_MODEL;
-        throw fallbackError;
-      }
+    // Keep Tutor available when the primary model is temporarily unavailable or rate-limited.
+    if ((Number(error?.status) === 404 || Number(error?.status) === 429 || [500,502,503,504].includes(Number(error?.status))) && DEFAULT_MODEL !== FALLBACK_MODEL) {
+      return await callGemini(prompt, { ...options, model:FALLBACK_MODEL, thinkingLevel:undefined });
     }
     throw error;
   }
@@ -314,7 +276,6 @@ export default async function handler(req, res) {
 
   const mode = body.mode || "tutor";
   const startedAt = Date.now();
-  const diagnosticId = `AI-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   try {
     if (mode === "correct") {
       const response = await callAI(buildCorrectionPrompt(body), { json: true, thinkingLevel: process.env.GEMINI_CORRECTION_THINKING || "medium", maxOutputTokens: 1200 });
@@ -344,29 +305,7 @@ export default async function handler(req, res) {
     const response = await callAI(buildTutorPrompt(message, tutorContext, history), { imageUrl:tutorContext.imageUrl, thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low", maxOutputTokens: 1400, temperature: 0.45 });
     return json(res, 200, { reply: response.text, ai: true });
   } catch (error) {
-    const primary = error?.primaryError || null;
-    console.error("AI_DIAGNOSTIC", {
-      diagnosticId,
-      mode,
-      provider: DEFAULT_PROVIDER,
-      primaryModel: DEFAULT_MODEL,
-      fallbackModel: FALLBACK_MODEL,
-      fallbackAttempted: Boolean(primary),
-      error: {
-        category: classifyAIError(error),
-        code: error?.code || null,
-        status: error?.status || null,
-        message: error?.message || "unknown"
-      },
-      primaryError: primary ? {
-        category: classifyAIError(primary),
-        code: primary.code || null,
-        status: primary.status || null,
-        message: primary.message || "unknown"
-      } : null,
-      latencyMs: Date.now() - startedAt,
-      timestamp: new Date().toISOString()
-    });
+    console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });
     const status = error?.code === "AI_NOT_CONFIGURED" ? 503 : 502;
     return json(res, status, {
       error: "Tutor sedang mengalami gangguan sementara. Silakan coba lagi beberapa saat.",

@@ -45,7 +45,8 @@ export async function getTutorReply({ message, context, history }) {
     const comic = context?.comicTitle || "comic ini";
     return {
       reply: `Tutor sedang mengalami gangguan sementara. Kamu tetap bisa melanjutkan belajar dari ${comic}. Coba baca kembali bagian ${concept}, lalu tanyakan lagi beberapa saat kemudian.`,
-      ai:false, unavailable:true
+      ai:false, unavailable:true,
+      aiError:error?.message || "AI unavailable", code:error?.code || "AI_UNAVAILABLE", status:error?.status || null
     };
   }
 }
@@ -55,7 +56,7 @@ export async function correctAnswerWithAI({ question, selectedAnswer, correctAns
     return await callEndpoint({ mode:"correct", question, selectedAnswer, correctAnswer, baselineDiagnosis, context }, { retries:1 });
   } catch (error) {
     console.error("AI correction failed", error);
-    return { ...baselineDiagnosis, ai:false, unavailable:true };
+    return { ...baselineDiagnosis, ai:false, unavailable:true, aiError:error?.message || "AI unavailable", code:error?.code || "AI_UNAVAILABLE" };
   }
 }
 
