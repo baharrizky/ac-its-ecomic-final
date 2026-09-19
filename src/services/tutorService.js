@@ -80,17 +80,27 @@ async function prepareTutorPayload({ message, context, history }) {
     }))
   };
   if (!imageRef) return base;
-  const image = await resolveTutorImage(imageRef);
-  if (image?.dataUrl) {
-    base.imageData = image.dataUrl;
-    base.imageMime = image.mimeType;
-    return base;
+  try {
+    const image = await resolveTutorImage(imageRef);
+    if (image?.dataUrl) {
+      base.imageData = image.dataUrl;
+      base.imageMime = image.mimeType;
+      base.context.imageAttached = true;
+      return base;
+    }
+    if (image?.imageUrl) {
+      base.context.imageUrl = image.imageUrl;
+      base.context.imageAttached = true;
+      return base;
+    }
+  } catch (error) {
+    // Image is supporting context, not a gate. Keep the student's actual
+    // question alive even if media/auth/network retrieval fails.
+    console.warn("Tutor image unavailable; continuing without image", error?.code || error?.message || error);
+    base.context.imageAttached = false;
+    base.context.imageError = String(error?.code || error?.message || "IMAGE_UNAVAILABLE").slice(0,120);
   }
-  if (image?.imageUrl) {
-    base.context.imageUrl = image.imageUrl;
-    return base;
-  }
-  throw new Error("PANEL_IMAGE_NOT_FOUND");
+  return base;
 }
 
 async function callEndpoint(payload, { timeoutMs = 35000 } = {}) {
@@ -135,11 +145,8 @@ export async function getTutorReply({ message, context, history }) {
     });
     const concept = context?.conceptName || "konsep yang sedang dipelajari";
     const comic = context?.comicTitle || "komik ini";
-    const imageProblem = String(error?.code || "").startsWith("PANEL_IMAGE_");
     return {
-      reply: imageProblem
-        ? "Gambar panel belum berhasil disiapkan untuk Tutor. Coba buka panel lagi lalu kirim pertanyaan."
-        : `Tutor sedang tidak tersedia sementara. Kamu tetap bisa melanjutkan belajar dari ${comic}. Coba kirim pertanyaan sekali lagi.`,
+      reply: `Tutor sedang tidak tersedia sementara. Kamu tetap bisa melanjutkan belajar dari ${comic}. Coba kirim pertanyaan sekali lagi.`,
       ai: false,
       unavailable: true,
       aiError: error?.message || "AI unavailable",

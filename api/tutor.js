@@ -64,7 +64,8 @@ function buildTutorPrompt(message, context, history = []) {
   return [
     "Kamu adalah AI Tutor matematika untuk siswa Indonesia.",
     "Jawab sebagai tutor yang hangat, singkat, jelas, dan interaktif.",
-    "Jika ada gambar panel, AMATI GAMBAR TERLEBIH DAHULU. Sebutkan hanya hal yang benar-benar terlihat.",
+    "Jika ada gambar panel, AMATI GAMBAR TERLEBIH DAHULU. Gunakan gambar sebagai konteks utama untuk hal-hal visual.",
+    "Jika gambar tidak tersedia, tetap jawab pertanyaan siswa menggunakan konteks materi yang tersedia. Jangan membalas hanya dengan pesan bahwa gambar gagal dibaca.",
     "Jangan menganggap metadata konsep sebagai sesuatu yang pasti terlihat pada gambar.",
     "Jika panel hanya pengantar/cerita, katakan bahwa panel itu berfungsi sebagai konteks dan jangan memaksakan materi matematika ke dalamnya.",
     "Jika siswa meminta jawaban soal secara langsung, beri satu petunjuk dan satu pertanyaan penuntun sebelum jawaban akhir.",
@@ -362,7 +363,7 @@ export default async function handler(req, res) {
     // Tutor intentionally uses a separate, conservative model path. This
     // keeps multimodal tutoring independent from the heavier correction /
     // recommendation flows and avoids Gemini 3 thinking/output edge cases.
-    const tutorModel = process.env.GEMINI_TUTOR_MODEL || FALLBACK_MODEL || "gemini-2.5-flash";
+    const tutorModel = process.env.GEMINI_TUTOR_MODEL || "gemini-2.5-flash";
     let response;
     try {
       response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
@@ -370,7 +371,8 @@ export default async function handler(req, res) {
         imageData: body.imageData || "",
         imageMime: body.imageMime || "",
         imageUrl: tutorContext.imageUrl,
-        imageExpected: Boolean(body.imageData || tutorContext.imageUrl),
+        // Image is preferred context, never a hard requirement.
+        imageExpected: false,
         maxOutputTokens: 800
       });
     } catch (primaryError) {
@@ -382,7 +384,8 @@ export default async function handler(req, res) {
           imageData: body.imageData || "",
           imageMime: body.imageMime || "",
           imageUrl: tutorContext.imageUrl,
-          imageExpected: Boolean(body.imageData || tutorContext.imageUrl),
+          // Image is preferred context, never a hard requirement.
+        imageExpected: false,
           maxOutputTokens: 800,
           thinkingLevel: /^gemini-3\./i.test(DEFAULT_MODEL) ? "low" : undefined
         });

@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from "firebase/app";
-import { getAuth, signInAnonymously } from "firebase/auth";
+import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -13,6 +13,7 @@ let auth = null;
 let db = null;
 let storage = null;
 let authPromise = null;
+let authReadyPromise = null;
 
 if (firebaseEnabled) {
   const config = {
@@ -29,9 +30,32 @@ if (firebaseEnabled) {
   storage = getStorage(app);
 }
 
+async function waitForFirebaseAuthReady() {
+  if (!auth) return null;
+  if (auth.currentUser) return auth.currentUser;
+  if (!authReadyPromise) {
+    authReadyPromise = new Promise((resolve) => {
+      let settled = false;
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        resolve(user || null);
+      });
+    });
+  }
+  return authReadyPromise;
+}
+
 export async function ensureFirebaseAuth() {
   if (!firebaseEnabled || !auth) return false;
-  if (auth.currentUser) return true;
+
+  // Firebase restores a persisted session asynchronously after a hard refresh.
+  // Wait for that first; otherwise media reads can run while auth.currentUser is
+  // still null and permanently resolve to the "image unavailable" fallback.
+  const restoredUser = await waitForFirebaseAuthReady();
+  if (restoredUser || auth.currentUser) return true;
+
   if (!authPromise) {
     authPromise = signInAnonymously(auth).then(() => true).catch((error) => {
       authPromise = null;

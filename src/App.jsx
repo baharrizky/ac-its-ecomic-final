@@ -7,7 +7,6 @@ import { loadCloudComics,saveCloudComic,subscribeCloudComics,mergeComicCollectio
 import { saveCloudQuestion,deleteCloudQuestion,subscribeCloudQuestions } from "./services/cloudQuestionService";
 import { getSession,logout,getRegisteredStudents,updateUserProfile } from "./services/authService";
 import { getTutorReply, correctAnswerWithAI, recommendNextQuestion, getTeacherRecommendation } from "./services/tutorService";
-import { askPanelAI } from "./services/panelVisionService";
 import { diagnoseAnswer } from "./engine/diagnosisEngine";
 import { updateMastery } from "./engine/masteryEngine";
 import { createEmptyStudentModel,getStudentModel,saveStudentModel,subscribeStudentModel,recordAttempt,recordLearningEvent,saveReflection,listReflections,saveAttendance,listAttendance,listStudentModels,listAttempts,saveExamResult,listExamResults,listLearningEvents,findClassAccessCode } from "./services/learningDataService";
@@ -174,12 +173,13 @@ export default function App(){
    const history=tutorMessages.slice(-12);
    let r;
    try {
-     r=context?._panelVision
-       ? await askPanelAI({imageRef:context.imageUrl,question:message})
-       : await getTutorReply({message,context,history});
+     // One Tutor path for every question. When the student is reading a panel,
+     // tutorService attaches that panel image when available. A failed image
+     // attachment must NEVER block an ordinary concept question.
+     r=await getTutorReply({message,context,history});
    } catch (error) {
-     console.error("Panel AI failed", error);
-     r={reply:"AI belum berhasil membaca gambar panel ini. Coba kirim pertanyaan sekali lagi.",ai:false,unavailable:true,code:error?.code||"PANEL_AI_FAILED"};
+     console.error("Tutor failed", error);
+     r={reply:"Tutor sedang tidak tersedia sementara. Silakan kirim pertanyaan lagi.",ai:false,unavailable:true,code:error?.code||"AI_UNAVAILABLE"};
    }
    const userMessage={role:"user",text:message};
    const assistantMessage={role:"assistant",text:r.reply||"AI belum memberikan jawaban."};

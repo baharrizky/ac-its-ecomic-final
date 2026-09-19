@@ -9,12 +9,25 @@ async function resolve(src) {
   if (!src.startsWith("local-media://") && !src.startsWith("cloud-media://")) return src;
   if (cache.has(src)) return cache.get(src);
   if (pending.has(src)) return pending.get(src);
-  const promise = getLocalMedia(src).then((value) => {
-    if (!value) return null;
-    const resolved = typeof value === "string" ? value : URL.createObjectURL(value);
-    cache.set(src, resolved);
-    return resolved;
-  });
+  const promise = (async () => {
+    // A hard refresh can briefly race Firebase Auth/Firestore initialization.
+    // Retry a few times so a transient auth/read race cannot turn a real image
+    // into the permanent "image unavailable" fallback.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const value = await getLocalMedia(src);
+        if (value) {
+          const resolved = typeof value === "string" ? value : URL.createObjectURL(value);
+          cache.set(src, resolved);
+          return resolved;
+        }
+      } catch (error) {
+        if (attempt === 3) throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
+    }
+    return null;
+  })();
   pending.set(src, promise);
   try { return await promise; }
   finally { pending.delete(src); }
