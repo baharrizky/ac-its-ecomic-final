@@ -43,3 +43,7 @@ export async function ensureFirebaseAuth() {
 }
 
 export { app, auth, db, storage };
+export async function getFirebaseIdToken() {
+  if (!(await ensureFirebaseAuth()) || !auth?.currentUser) return null;
+  return auth.currentUser.getIdToken();
+}
