@@ -48,7 +48,7 @@ async function prepareTutorPayload(payload) {
   if (image?.base64) {
     return {
       ...payload,
-      imageData: image.base64,
+      imageData: image.dataUrl,
       imageMime: image.mimeType,
       context: { ...context, imageUrl: image.dataUrl ? "[panel-image-attached]" : context.imageUrl }
     };

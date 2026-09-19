@@ -22,6 +22,125 @@ function extractGeminiText(data) {
   return parts.join("\n").trim();
 }
 
+
+function extractInteractionText(data) {
+  const parts = [];
+  for (const step of data?.steps || []) {
+    if (step?.type !== "model_output") continue;
+    for (const item of step?.content || []) {
+      if (item?.type === "text" && typeof item?.text === "string") parts.push(item.text);
+    }
+  }
+  if (parts.length) return parts.join("\n").trim();
+  if (typeof data?.output_text === "string") return data.output_text.trim();
+  return "";
+}
+
+async function callGeminiInteractions(prompt, options = {}) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    const e = new Error("GEMINI_API_KEY belum dikonfigurasi di server.");
+    e.code = "AI_NOT_CONFIGURED";
+    throw e;
+  }
+
+  const model = options.model || DEFAULT_MODEL;
+  const input = [];
+  let imageAttached = false;
+  let imageBytes = 0;
+  let imageMimeType = null;
+
+  let image = parseInlineImageData(options.imageData || "");
+  if (!image && options.imageData && options.imageMime) {
+    const raw = String(options.imageData).replace(/\s+/g, "");
+    const mimeType = String(options.imageMime).toLowerCase();
+    if (mimeType.startsWith("image/") && raw) {
+      const approxBytes = Math.floor((raw.length * 3) / 4);
+      if (approxBytes > 0 && approxBytes <= 12 * 1024 * 1024) {
+        image = { mimeType, data: raw, bytes: approxBytes };
+      }
+    }
+  }
+  if (!image && options.imageUrl) {
+    try { image = await imageUrlToInlineData(options.imageUrl); }
+    catch (error) { console.warn("AI_INTERACTIONS_IMAGE_FETCH_ERROR", { message: error?.message || "unknown" }); }
+  }
+
+  if (image) {
+    input.push({ type: "image", mime_type: image.mimeType, data: image.data });
+    imageAttached = true;
+    imageBytes = image.bytes || Math.floor((image.data.length * 3) / 4);
+    imageMimeType = image.mimeType;
+  } else if (options.imageExpected) {
+    const e = new Error("Panel image tidak berhasil dilampirkan ke Interactions API.");
+    e.code = "AI_IMAGE_NOT_ATTACHED";
+    throw e;
+  }
+
+  input.push({ type: "text", text: prompt });
+
+  const payload = {
+    model,
+    input,
+    system_instruction: options.systemInstruction || undefined,
+    generation_config: {
+      max_output_tokens: options.maxOutputTokens || 1200,
+      temperature: options.temperature ?? 0.4,
+      ...(options.thinkingLevel ? { thinking_level: options.thinkingLevel } : {})
+    },
+    store: false
+  };
+
+  const url = "https://generativelanguage.googleapis.com/v1/interactions";
+  const started = Date.now();
+  const response = await fetchWithTimeout(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify(payload)
+  }, DEFAULT_TIMEOUT_MS);
+
+  const data = await response.json().catch(() => ({}));
+  const latencyMs = Date.now() - started;
+  if (!response.ok) {
+    const msg = data?.error?.message || data?.errors?.[0]?.message || `Gemini Interactions gagal (${response.status})`;
+    const e = new Error(msg);
+    e.status = response.status;
+    e.provider = "gemini-interactions";
+    e.latencyMs = latencyMs;
+    throw e;
+  }
+
+  if (data?.status === "failed") {
+    const e = new Error(data?.errors?.[0]?.message || "Gemini Interaction berstatus failed.");
+    e.code = "AI_INTERACTION_FAILED";
+    e.status = 502;
+    throw e;
+  }
+
+  const text = extractInteractionText(data);
+  if (!text) {
+    const e = new Error(`Gemini Interactions tidak mengembalikan teks (status: ${data?.status || "unknown"}).`);
+    e.code = "AI_EMPTY_RESPONSE";
+    e.status = 502;
+    throw e;
+  }
+
+  return {
+    text,
+    meta: {
+      provider: "gemini-interactions",
+      model,
+      latencyMs,
+      interactionId: data?.id || null,
+      status: data?.status || null,
+      usage: data?.usage || null,
+      imageAttached,
+      imageBytes,
+      imageMimeType
+    }
+  };
+}
+
 function parseJsonObject(text) {
   if (!text) return null;
   const clean = String(text).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
@@ -190,6 +309,16 @@ async function buildGeminiParts(prompt, options = {}) {
   // base64. This avoids asking the Vercel function to understand app-specific
   // media references.
   let image = parseInlineImageData(options.imageData || "");
+  if (!image && options.imageData && options.imageMime) {
+    const raw = String(options.imageData).replace(/\s+/g, "");
+    const mimeType = String(options.imageMime).toLowerCase();
+    if (mimeType.startsWith("image/") && raw) {
+      const approxBytes = Math.floor((raw.length * 3) / 4);
+      if (approxBytes > 0 && approxBytes <= 12 * 1024 * 1024) {
+        image = { mimeType, data: raw, bytes: approxBytes };
+      }
+    }
+  }
   if (!image && options.imageUrl) {
     try {
       image = await imageUrlToInlineData(options.imageUrl);
@@ -332,8 +461,9 @@ export default async function handler(req, res) {
     if (!message) return json(res, 400, { error: "Message is required" });
     const history = Array.isArray(body.history) ? body.history : [];
     const tutorContext = body.context || {};
-    const response = await callAI(buildTutorPrompt(message, tutorContext, history), {
+    const response = await callGeminiInteractions(buildTutorPrompt(message, tutorContext, history), {
       imageData: body.imageData || "",
+      imageMime: body.imageMime || "",
       imageUrl: tutorContext.imageUrl,
       imageExpected: Boolean(body.imageData || tutorContext.imageUrl),
       thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low",
