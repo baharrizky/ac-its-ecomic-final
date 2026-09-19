@@ -10,13 +10,41 @@ function blobToDataUrl(blob) {
   });
 }
 
+
+async function optimizeDataUrl(dataUrl, mimeType) {
+  // Vercel Functions have a 4.5 MB request-body limit. Keep the panel image
+  // comfortably below that limit before sending it to /api/tutor.
+  if (!dataUrl || dataUrl.length < 3_000_000 || typeof Image === "undefined") return dataUrl;
+  return await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxSide = 1600;
+        const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+        canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(dataUrl);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const out = canvas.toDataURL("image/jpeg", 0.78);
+        resolve(out.length < dataUrl.length ? out : dataUrl);
+      } catch { resolve(dataUrl); }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 async function resolveTutorImage(imageRef) {
   const value = String(imageRef || "").trim();
   if (!value) return null;
   if (value.startsWith("data:image/")) {
     const match = value.match(/^data:(image\/[^;]+);base64,(.+)$/s);
     if (!match) throw new Error("Format gambar panel tidak valid.");
-    return { dataUrl: value, mimeType: match[1], base64: match[2] };
+    const optimized = await optimizeDataUrl(value, match[1]);
+    const optimizedMatch = optimized.match(/^data:(image\/[^;]+);base64,(.+)$/s);
+    return { dataUrl: optimized, mimeType: optimizedMatch?.[1] || match[1], base64: optimizedMatch?.[2] || match[2] };
   }
   if (!value.startsWith("local-media://") && !value.startsWith("cloud-media://")) {
     return { imageUrl: value };
@@ -34,7 +62,9 @@ async function resolveTutorImage(imageRef) {
   }
   const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/s);
   if (!match) throw new Error("PANEL_IMAGE_INVALID_DATA");
-  return { dataUrl, mimeType: match[1], base64: match[2] };
+  const optimized = await optimizeDataUrl(dataUrl, match[1]);
+  const optimizedMatch = optimized.match(/^data:(image\/[^;]+);base64,(.+)$/s);
+  return { dataUrl: optimized, mimeType: optimizedMatch?.[1] || match[1], base64: optimizedMatch?.[2] || match[2] };
 }
 
 async function prepareTutorPayload(payload) {

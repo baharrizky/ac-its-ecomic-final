@@ -461,7 +461,11 @@ export default async function handler(req, res) {
     if (!message) return json(res, 400, { error: "Message is required" });
     const history = Array.isArray(body.history) ? body.history : [];
     const tutorContext = body.context || {};
-    const response = await callGeminiInteractions(buildTutorPrompt(message, tutorContext, history), {
+    // Tutor uses the proven Gemini generateContent path. The browser sends
+    // the actual panel image as a data URL, so the server never needs to
+    // understand cloud-media:// references. This keeps Tutor independent
+    // from the newer Interactions API while still using Gemini vision.
+    const response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
       imageData: body.imageData || "",
       imageMime: body.imageMime || "",
       imageUrl: tutorContext.imageUrl,
