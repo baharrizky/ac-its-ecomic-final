@@ -1,8 +1,8 @@
 const DEFAULT_PROVIDER = (process.env.AI_PROVIDER || "gemini").toLowerCase();
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
-const DEFAULT_TIMEOUT_MS = Math.max(5000, Number(process.env.AI_TIMEOUT_MS || 20000));
-const DEFAULT_RETRIES = Math.min(3, Math.max(0, Number(process.env.AI_MAX_RETRIES || 2)));
+const DEFAULT_TIMEOUT_MS = Math.max(8000, Number(process.env.AI_TIMEOUT_MS || 30000));
+const DEFAULT_RETRIES = Math.min(3, Math.max(1, Number(process.env.AI_MAX_RETRIES || 2)));
 
 function json(res, status, payload) {
   return res.status(status).json(payload);
@@ -300,7 +300,9 @@ async function callAI(prompt, options = {}) {
     return await callGemini(prompt, options);
   } catch (error) {
     // Keep Tutor available when the primary model is temporarily unavailable or rate-limited.
-    if ((Number(error?.status) === 404 || Number(error?.status) === 429 || [500,502,503,504].includes(Number(error?.status))) && DEFAULT_MODEL !== FALLBACK_MODEL) {
+    const providerStatus = Number(error?.status);
+    const canFallback = providerStatus === 400 || providerStatus === 404 || providerStatus === 429 || [500,502,503,504].includes(providerStatus);
+    if (canFallback && DEFAULT_MODEL !== FALLBACK_MODEL) {
       return await callGemini(prompt, { ...options, model:FALLBACK_MODEL, thinkingLevel:undefined });
     }
     throw error;
@@ -356,14 +358,13 @@ export default async function handler(req, res) {
     // the actual panel image as a data URL, so the server never needs to
     // understand cloud-media:// references. This keeps Tutor independent
     // from the newer Interactions API while still using Gemini vision.
-    const response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
+    const response = await callAI(buildTutorPrompt(message, tutorContext, history), {
       imageData: body.imageData || "",
       imageMime: body.imageMime || "",
       imageUrl: tutorContext.imageUrl,
       imageExpected: Boolean(body.imageData || tutorContext.imageUrl),
       thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low",
-      maxOutputTokens: 1400,
-      temperature: 0.45
+      maxOutputTokens: 1400
     });
     return json(res, 200, { reply: response.text, ai: true, meta: response.meta });
   } catch (error) {

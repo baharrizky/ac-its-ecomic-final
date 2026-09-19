@@ -1,7 +1,7 @@
 const endpoint = "/api/tutor";
 import { getLocalMedia } from "./mediaService";
 
-const MAX_AI_IMAGE_DATA_URL = 2_800_000; // comfortably below Vercel's request limit after JSON overhead
+const MAX_AI_IMAGE_DATA_URL = 1_900_000; // comfortably below Vercel's request limit after JSON overhead
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -18,7 +18,7 @@ async function optimizeDataUrl(dataUrl) {
     const img = new Image();
     img.onload = () => {
       try {
-        const maxSide = 1500;
+        const maxSide = 1400;
         const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
@@ -27,9 +27,9 @@ async function optimizeDataUrl(dataUrl) {
         if (!ctx) return resolve(dataUrl);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         // WebP first; JPEG fallback is handled by browsers that do not support it.
-        let out = canvas.toDataURL("image/webp", 0.72);
+        let out = canvas.toDataURL("image/webp", 0.68);
         if (!out.startsWith("data:image/webp")) out = canvas.toDataURL("image/jpeg", 0.72);
-        if (out.length > MAX_AI_IMAGE_DATA_URL) out = canvas.toDataURL("image/jpeg", 0.62);
+        if (out.length > MAX_AI_IMAGE_DATA_URL) out = canvas.toDataURL("image/jpeg", 0.58);
         resolve(out.length < dataUrl.length ? out : dataUrl);
       } catch {
         resolve(dataUrl);
@@ -60,7 +60,8 @@ async function resolveTutorImage(imageRef) {
   }
 
   // A normal HTTPS image URL is left in context. The server can fetch it directly.
-  return { imageUrl: value };
+  if (/^https?:\/\//i.test(value)) return { imageUrl: value };
+  throw new Error("PANEL_IMAGE_UNSUPPORTED_REF");
 }
 
 async function prepareTutorPayload(payload) {
