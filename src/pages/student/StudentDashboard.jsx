@@ -57,7 +57,7 @@ export default function StudentDashboard({state,navigate,session}) {
         </section>
 
         <aside>
-          <div className="section-head"><div><h2>Rekomendasi</h2><span>Dari Student Model</span></div></div>
+          <div className="section-head"><div><h2>Rekomendasi</h2><span>Dari perkembangan belajarmu</span></div></div>
           <div className="recommend-card">
             <div className="recommend-icon"><PencilLine size={20}/></div>
             <span>Konsep yang perlu diperkuat</span>

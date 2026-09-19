@@ -74,7 +74,7 @@ Schema dikirim ke Gemini sehingga backend dapat memvalidasi respons secara konsi
 
 ## 6. AI status check
 
-Setelah deployment, buka `/api/ai-status` pada domain Vercel yang sama. Endpoint ini hanya menampilkan status konfigurasi, provider, model, retry, dan timeout. **API key tidak pernah dikembalikan.**
+Status operasional AI tidak ditampilkan di antarmuka siswa. Pemeriksaan konfigurasi dilakukan melalui environment server dan log deployment oleh pengelola. API key tetap hanya berada di server.
 
 ## 7. UAT minimum
 
@@ -90,3 +90,10 @@ Setelah deployment, buka `/api/ai-status` pada domain Vercel yang sama. Endpoint
 ## 8. Provider berikutnya
 
 Arsitektur server tetap menggunakan `AI_PROVIDER`, sehingga provider kedua dapat ditambahkan tanpa mengubah interface Tutor/Correction di frontend.
+
+
+## AI diagnostics (admin/backend only)
+
+User-facing pages do not expose provider, model, endpoint, HTTP status, API key, quota, retry, or stack-trace details. When an AI request fails, the API writes a structured `AI_DIAGNOSTIC` entry to the Vercel Function Logs. The entry includes a diagnostic ID, mode, primary/fallback model, error category, HTTP status, provider message, fallback attempt, latency, and timestamp. API keys are never logged.
+
+Common categories: `NOT_CONFIGURED`, `TIMEOUT`, `BAD_REQUEST`, `INVALID_API_KEY`, `PERMISSION_OR_ACCESS_DENIED`, `MODEL_OR_ENDPOINT_NOT_FOUND`, `RATE_LIMIT_OR_QUOTA`, `PROVIDER_SERVER_ERROR`, `INVALID_AI_OUTPUT`, and `EMPTY_AI_RESPONSE`.

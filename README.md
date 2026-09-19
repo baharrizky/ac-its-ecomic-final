@@ -83,3 +83,10 @@ Lihat `docs/UAT-CHECKLIST.md` untuk skenario pengujian end-to-end.
 ## AI UAT — Gemini
 
 AI provider utama UAT adalah Gemini melalui `/api/tutor`. Lihat `docs/AI-SETUP.md` dan `README-AI-UAT.md`.
+
+
+## v16.4 UX
+- Diagnostic AI endpoint/test UI removed from student-facing production flow.
+- Operational AI details remain server-side.
+- Student-facing copy uses learning language instead of backend terminology.
+- Tutor, practice, and reader layouts keep normal page scrolling on desktop Windows and mobile.

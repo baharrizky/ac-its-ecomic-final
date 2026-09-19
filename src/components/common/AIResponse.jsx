@@ -49,8 +49,21 @@ function renderInline(text, keyPrefix = "i") {
   return nodes;
 }
 
+function latexToReadable(value) {
+  let out = String(value || "");
+  // Common raw-LaTeX fragments sometimes returned without math delimiters.
+  out = out.replace(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, "($1)/($2)");
+  out = out.replace(/\\sqrt\s*\{([^{}]+)\}/g, "√($1)");
+  out = out.replace(/\\times/g, "×").replace(/\\cdot/g, "·").replace(/\\div/g, "÷");
+  out = out.replace(/\\leq?/g, "≤").replace(/\\geq?/g, "≥").replace(/\\neq/g, "≠").replace(/\\pm/g, "±");
+  out = out.replace(/\\rightarrow/g, "→").replace(/\\leftarrow/g, "←");
+  out = out.replace(/\\text\s*\{([^{}]+)\}/g, "$1");
+  out = out.replace(/\^\{([^{}]+)\}/g, "^$1");
+  return out;
+}
+
 function formatPlain(text, key) {
-  const value = String(text || "");
+  const value = latexToReadable(text);
   const parts = value.split(/(\*\*[^*]+\*\*)/g);
   return (
     <React.Fragment key={key}>
@@ -70,9 +83,7 @@ export default function AIResponse({ text, className = "" }) {
 
   // Normalize common model output variants before rendering.
   const normalized = value
-    .replace(/\\textbf\{([^}]+)\}/g, "**$1**")
-    .replace(/\\div/g, "\\div")
-    .replace(/\\times/g, "\\times");
+    .replace(/\\textbf\{([^}]+)\}/g, "**$1**");
 
   const blocks = normalized.split(/\n{2,}/g);
   return (

@@ -37,7 +37,7 @@ export default function PracticePage({ questions = [], studentModel, onAnswer, o
   }
 
   return <div>
-    <div className="page-kicker">Adaptive Practice</div><h1 className="page-title">Latihan Berjenjang</h1><p className="page-desc">Soal dipilih berdasarkan student model dan dapat disesuaikan lagi oleh AI setelah setiap jawaban. {recommendation.reason}</p>
+    <div className="page-kicker">Adaptive Practice</div><h1 className="page-title">Latihan Berjenjang</h1><p className="page-desc">Soal berikut dipilih berdasarkan hasil latihanmu dan tingkat penguasaan konsep. {recommendation.reason}</p>
     <div className="split" style={{marginTop:18}}>
       <section className="card">
         <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><Badge tone="blue">{q.conceptId} · {concepts[q.conceptId]?.name||q.conceptId}</Badge><Badge tone={q.level<=1?"green":"amber"}>Level {q.level||q.difficulty||1}</Badge></div>
@@ -46,14 +46,13 @@ export default function PracticePage({ questions = [], studentModel, onAnswer, o
         <div style={{marginTop:12}}>{q.options.map((o,i)=><button key={`${q.id}-${i}`} className="option" onClick={()=>choose(i)} disabled={!!diagnosis} style={selected===i?{borderColor:i===q.answer?"#10b981":"#ef4444",background:i===q.answer?"#ecfdf5":"#fff1f2"}:{}}>{String.fromCharCode(65+i)}. {o}</button>)}</div>
         {diagnosis&&<div className={`feedback ${diagnosis.correct?"good":"bad"}`}>
           <strong>{diagnosis.correct?"Benar!":"Belum tepat."}</strong><div style={{marginTop:4}}><AIResponse text={diagnosis.explanation}/></div>
-          {!diagnosis.correct&&<div style={{marginTop:5}}>Diagnosis: <b>{diagnosis.misconceptionTag}</b></div>}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"AI sedang menjelaskan…":"Minta AI jelaskan"}</button><button className="btn-primary" onClick={next}>{index>=published.length-1?"Selesai":"Soal Berikutnya →"}</button></div>
           {aiReply&&<div className="ai-feedback"><strong>AI Tutor</strong><AIResponse text={aiReply}/></div>}
         </div>}
       </section>
       <aside className="side-stack">
-        <div className="card"><div className="label">Student Model</div><div style={{fontSize:28,fontWeight:900}}>{Math.round((studentModel.overallMastery||0)*100)}%</div><div className="subtle">overall mastery</div><div className="progress" style={{marginTop:8}}><span style={{width:`${(studentModel.overallMastery||0)*100}%`}}/></div></div>
-        <div className="card"><div className="label">Adaptive Decision</div><p style={{fontSize:13}}><strong>{recommendation.type === "remedial" ? "Remedial" : recommendation.type === "challenge" ? "Challenge" : "Practice"}</strong></p><p className="subtle">{recommendation.reason}</p><div className="list-item"><span>Konsep prioritas</span><strong>{recommendation.conceptId||"-"}</strong></div><div className="list-item"><span>Target level</span><strong>{recommendation.targetLevel||1}</strong></div>{diagnosis?.recommendation?.reason&&<div className="ai-feedback"><strong>Keputusan AI berikutnya</strong><p>{diagnosis.recommendation.reason}</p></div>}</div>
+        <div className="card"><div className="label">Penguasaan Materi</div><div style={{fontSize:28,fontWeight:900}}>{Math.round((studentModel.overallMastery||0)*100)}%</div><div className="subtle">perkembangan keseluruhan</div><div className="progress" style={{marginTop:8}}><span style={{width:`${(studentModel.overallMastery||0)*100}%`}}/></div></div>
+        <div className="card"><div className="label">Rencana Belajar</div><p style={{fontSize:13}}><strong>{recommendation.type === "remedial" ? "Remedial" : recommendation.type === "challenge" ? "Challenge" : "Practice"}</strong></p><p className="subtle">{recommendation.reason}</p><div className="list-item"><span>Fokus konsep</span><strong>{recommendation.conceptId||"-"}</strong></div><div className="list-item"><span>Tingkat latihan</span><strong>{recommendation.targetLevel||1}</strong></div>{diagnosis?.recommendation?.reason&&<div className="ai-feedback"><strong>Saran latihan berikutnya</strong><p>{diagnosis.recommendation.reason}</p></div>}</div>
         <div className="card"><div className="label">Progress Sesi</div><strong>{index+1} / {published.length}</strong><div className="progress" style={{marginTop:8}}><span style={{width:`${((index+1)/published.length)*100}%`}}/></div></div>
       </aside>
     </div>

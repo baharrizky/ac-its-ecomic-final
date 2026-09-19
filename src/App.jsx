@@ -39,7 +39,8 @@ const fallback={comics:[],questions:[],studentModel:emptyModel(),screen:null,sel
 export default function App(){
  const [session,setSession]=useState(getSession());
  const [state,setState]=useState(()=>loadState(fallback));
- const [tutorMessages,setTutorMessages]=useState([{role:"assistant",text:"Halo! Saya AI Tutor E-Comic. Kamu bisa bertanya tentang panel, persamaan, atau konsep yang sedang dipelajari."}]);
+ const tutorGreeting={role:"assistant",text:"Halo! Saya AI Tutor E-Comic. Kamu bisa bertanya tentang panel, persamaan, atau konsep yang sedang dipelajari."};
+ const [tutorMessages,setTutorMessages]=useState([tutorGreeting]);
  const [drawerOpen,setDrawerOpen]=useState(false);
  const [authPage,setAuthPage]=useState("login");
  const [registeredStudents,setRegisteredStudents]=useState([]);
@@ -50,6 +51,21 @@ export default function App(){
  const [studentAttendance,setStudentAttendance]=useState([]);
 
  useEffect(()=>saveState(state),[state]);
+
+ // Keep Tutor history available after refresh and when navigating between screens.
+ useEffect(()=>{
+   if(!session?.uid || session.role!=="student") return;
+   try {
+     const raw=localStorage.getItem(`acits-tutor-history:${session.uid}`);
+     const saved=raw?JSON.parse(raw):[];
+     setTutorMessages(Array.isArray(saved)&&saved.length?saved.slice(-80):[tutorGreeting]);
+   } catch { setTutorMessages([tutorGreeting]); }
+ },[session?.uid,session?.role]);
+
+ useEffect(()=>{
+   if(!session?.uid || session.role!=="student") return;
+   try { localStorage.setItem(`acits-tutor-history:${session.uid}`,JSON.stringify(tutorMessages.slice(-80))); } catch {}
+ },[tutorMessages,session?.uid,session?.role]);
 
  const refreshTeacherData=async()=>{
    const [rawStudents,models,attempts,reflections,attendance,examResults,events]=await Promise.all([getRegisteredStudents(),listStudentModels(),listAttempts(),listReflections(),listAttendance(),listExamResults(),listLearningEvents()]);
@@ -94,8 +110,15 @@ export default function App(){
      const model=await getStudentModel(session.uid,emptyModel());
      if(alive)setState(s=>({...s,studentModel:{...s.studentModel,...model}}));
      unsubscribe=await subscribeStudentModel(session.uid,model2=>{if(alive)setState(s=>({...s,studentModel:{...s.studentModel,...model2}}));});
-     const [refs,att]=await Promise.all([listReflections(),listAttendance()]);
-     if(alive){setStudentReflections(refs);setStudentAttendance(att);}
+     const [refs,att,events]=await Promise.all([listReflections(),listAttendance(),listLearningEvents({uid:session.uid})]);
+     if(alive){
+       setStudentReflections(refs);setStudentAttendance(att);
+       const history=events.filter(e=>e.type==="tutor_message"&&e.payload?.message).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))).flatMap(e=>[
+         {role:"user",text:String(e.payload.message)},
+         ...(e.payload.reply?[{role:"assistant",text:String(e.payload.reply)}]:[])
+       ]).slice(-80);
+       if(history.length)setTutorMessages(history);
+     }
    })();
    return()=>{alive=false;unsubscribe?.();};
  },[session?.uid]);
@@ -146,7 +169,15 @@ export default function App(){
    }
    return {...d,recommendation};
  };
- const handleTutor=async(message,context={})=>{const r=await getTutorReply({message,context,history:tutorMessages.slice(-8)});setTutorMessages(m=>[...m,{role:"user",text:message},{role:"assistant",text:r.reply}]);if(session?.uid)await recordLearningEvent({uid:session.uid,type:"tutor_message",payload:{message,context,ai:r.ai,unavailable:r.unavailable||false,provider:r.meta?.provider||null,model:r.meta?.model||null,latencyMs:r.meta?.latencyMs||null,usage:r.meta?.usage||null}});return r;};
+ const handleTutor=async(message,context={})=>{
+   const history=tutorMessages.slice(-12);
+   const r=await getTutorReply({message,context,history});
+   const userMessage={role:"user",text:message};
+   const assistantMessage={role:"assistant",text:r.reply};
+   setTutorMessages(m=>[...m,userMessage,assistantMessage].slice(-80));
+   if(session?.uid)await recordLearningEvent({uid:session.uid,type:"tutor_message",payload:{message,reply:r.reply||"",context,ai:r.ai,unavailable:r.unavailable||false,provider:r.meta?.provider||null,model:r.meta?.model||null,latencyMs:r.meta?.latencyMs||null,usage:r.meta?.usage||null}});
+   return r;
+ };
  const handleReaderProgress=async({comic,episodeIndex,panelIndex,durationSeconds=0})=>{if(!session?.uid||!comic)return;const key=`${comic.id}:${episodeIndex}:${panelIndex}`;await recordLearningEvent({uid:session.uid,name:session.name,role:"student",type:"comic_panel_view",comicId:comic.id,episodeIndex,panelIndex,durationSeconds:Number(durationSeconds)||0,createdAt:new Date().toISOString()});if(state.studentModel.completedPanels?.[key]){setState(s=>({...s,currentReaderContext:{comicId:comic.id,episodeIndex,panelIndex}}));return;}const next=touchActivity({...state.studentModel,completedPanels:{...(state.studentModel.completedPanels||{}),[key]:1}},2);const allDone=(comic.episodes||[]).every(ep=>(ep.panels||[]).every((_,pi)=>next.completedPanels?.[`${comic.id}:${comic.episodes.indexOf(ep)}:${pi}`]));if(allDone&&!next.completedComics.includes(comic.id))next.completedComics=[...(next.completedComics||[]),comic.id];setState(s=>({...s,studentModel:next,currentReaderContext:{comicId:comic.id,episodeIndex,panelIndex}}));await saveStudentModel(session.uid,next);};
  const handleReflection=async r=>{await saveReflection({...r,uid:session.uid});setStudentReflections(await listReflections());if(session?.uid)await recordLearningEvent({uid:session.uid,type:"reflection_submitted"});};
  const handleAttendance=async r=>{await saveAttendance(r);setStudentAttendance(await listAttendance());if(session?.uid)await recordLearningEvent({uid:session.uid,type:"attendance"});return true;};

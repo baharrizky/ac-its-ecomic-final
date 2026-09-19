@@ -141,6 +141,21 @@ function isRetryable(status) {
   return [408, 429, 500, 502, 503, 504].includes(Number(status));
 }
 
+function classifyAIError(error) {
+  const status = Number(error?.status || 0);
+  if (error?.code === "AI_NOT_CONFIGURED") return "NOT_CONFIGURED";
+  if (error?.code === "AI_TIMEOUT") return "TIMEOUT";
+  if (status === 400) return "BAD_REQUEST";
+  if (status === 401) return "INVALID_API_KEY";
+  if (status === 403) return "PERMISSION_OR_ACCESS_DENIED";
+  if (status === 404) return "MODEL_OR_ENDPOINT_NOT_FOUND";
+  if (status === 429) return "RATE_LIMIT_OR_QUOTA";
+  if (status >= 500) return "PROVIDER_SERVER_ERROR";
+  if (error?.code === "AI_INVALID_JSON") return "INVALID_AI_OUTPUT";
+  if (error?.code === "AI_EMPTY_RESPONSE") return "EMPTY_AI_RESPONSE";
+  return "UNKNOWN";
+}
+
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -245,13 +260,36 @@ async function callGemini(prompt, options = {}) {
 }
 
 async function callAI(prompt, options = {}) {
-  if (DEFAULT_PROVIDER !== "gemini") throw Object.assign(new Error(`Provider ${DEFAULT_PROVIDER} belum diaktifkan pada build ini.`), { code: "AI_PROVIDER_UNSUPPORTED" });
+  if (DEFAULT_PROVIDER !== "gemini") {
+    throw Object.assign(new Error(`Provider ${DEFAULT_PROVIDER} belum diaktifkan pada build ini.`), { code: "AI_PROVIDER_UNSUPPORTED" });
+  }
+  let primaryError = null;
   try {
-    return await callGemini(prompt, options);
+    const result = await callGemini(prompt, options);
+    return { ...result, meta: { ...result.meta, fallbackUsed: false } };
   } catch (error) {
-    // If the configured latest model is unavailable, keep the platform alive with a stable fallback model.
-    if (Number(error?.status) === 404 && DEFAULT_MODEL !== FALLBACK_MODEL) {
-      return await callGemini(prompt, { ...options, model:FALLBACK_MODEL, thinkingLevel:undefined });
+    primaryError = error;
+    const retryableForFallback = [404, 408, 429, 500, 502, 503, 504].includes(Number(error?.status)) || error?.code === "AI_TIMEOUT";
+    if (retryableForFallback && DEFAULT_MODEL !== FALLBACK_MODEL) {
+      try {
+        const fallback = await callGemini(prompt, { ...options, model: FALLBACK_MODEL, thinkingLevel: undefined });
+        return {
+          ...fallback,
+          meta: {
+            ...fallback.meta,
+            fallbackUsed: true,
+            primaryModel: DEFAULT_MODEL,
+            primaryError: {
+              code: primaryError?.code || null,
+              status: primaryError?.status || null
+            }
+          }
+        };
+      } catch (fallbackError) {
+        fallbackError.primaryError = primaryError;
+        fallbackError.fallbackModel = FALLBACK_MODEL;
+        throw fallbackError;
+      }
     }
     throw error;
   }
@@ -276,26 +314,27 @@ export default async function handler(req, res) {
 
   const mode = body.mode || "tutor";
   const startedAt = Date.now();
+  const diagnosticId = `AI-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   try {
     if (mode === "correct") {
       const response = await callAI(buildCorrectionPrompt(body), { json: true, thinkingLevel: process.env.GEMINI_CORRECTION_THINKING || "medium", maxOutputTokens: 1200 });
       const parsed = parseJsonObject(response.text);
       if (!parsed) throw Object.assign(new Error("AI correction mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
-      return json(res, 200, { ...normalizeCorrection(parsed, body.baselineDiagnosis || {}), ai: true, meta: { ...response.meta, totalLatencyMs: Date.now() - startedAt } });
+      return json(res, 200, { ...normalizeCorrection(parsed, body.baselineDiagnosis || {}), ai: true });
     }
 
     if (mode === "recommend") {
       const response = await callAI(buildRecommendationPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 900 });
       const parsed = parseJsonObject(response.text);
       if (!parsed) throw Object.assign(new Error("AI recommendation mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
-      return json(res, 200, { questionId: parsed.questionId || null, conceptId: parsed.conceptId || null, targetLevel: Number(parsed.targetLevel || 1), action: parsed.action || "practice", reason: String(parsed.reason || "Latihan dipilih berdasarkan student model."), ai: true, meta: { ...response.meta, totalLatencyMs: Date.now() - startedAt } });
+      return json(res, 200, { questionId: parsed.questionId || null, conceptId: parsed.conceptId || null, targetLevel: Number(parsed.targetLevel || 1), action: parsed.action || "practice", reason: String(parsed.reason || "Latihan dipilih berdasarkan perkembangan belajar siswa."), ai: true });
     }
 
     if (mode === "teacher_recommend") {
       const response = await callAI(buildTeacherPrompt(body), { json: true, thinkingLevel: "medium", maxOutputTokens: 1100 });
       const parsed = parseJsonObject(response.text);
       if (!parsed) throw Object.assign(new Error("AI teacher recommendation mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
-      return json(res, 200, { summary: String(parsed.summary || ""), priorityConcepts: Array.isArray(parsed.priorityConcepts) ? parsed.priorityConcepts.slice(0, 8) : [], recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.slice(0, 8) : [], nextActivity: String(parsed.nextActivity || ""), teacherNote: String(parsed.teacherNote || ""), ai: true, meta: { ...response.meta, totalLatencyMs: Date.now() - startedAt } });
+      return json(res, 200, { summary: String(parsed.summary || ""), priorityConcepts: Array.isArray(parsed.priorityConcepts) ? parsed.priorityConcepts.slice(0, 8) : [], recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.slice(0, 8) : [], nextActivity: String(parsed.nextActivity || ""), teacherNote: String(parsed.teacherNote || ""), ai: true });
     }
 
     const message = clampText(body.message, 3000).trim();
@@ -303,17 +342,35 @@ export default async function handler(req, res) {
     const history = Array.isArray(body.history) ? body.history : [];
     const tutorContext = body.context || {};
     const response = await callAI(buildTutorPrompt(message, tutorContext, history), { imageUrl:tutorContext.imageUrl, thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low", maxOutputTokens: 1400, temperature: 0.45 });
-    return json(res, 200, { reply: response.text, ai: true, meta: { ...response.meta, totalLatencyMs: Date.now() - startedAt } });
+    return json(res, 200, { reply: response.text, ai: true });
   } catch (error) {
-    console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });
+    const primary = error?.primaryError || null;
+    console.error("AI_DIAGNOSTIC", {
+      diagnosticId,
+      mode,
+      provider: DEFAULT_PROVIDER,
+      primaryModel: DEFAULT_MODEL,
+      fallbackModel: FALLBACK_MODEL,
+      fallbackAttempted: Boolean(primary),
+      error: {
+        category: classifyAIError(error),
+        code: error?.code || null,
+        status: error?.status || null,
+        message: error?.message || "unknown"
+      },
+      primaryError: primary ? {
+        category: classifyAIError(primary),
+        code: primary.code || null,
+        status: primary.status || null,
+        message: primary.message || "unknown"
+      } : null,
+      latencyMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString()
+    });
     const status = error?.code === "AI_NOT_CONFIGURED" ? 503 : 502;
     return json(res, status, {
-      error: "AI sedang tidak tersedia.",
-      detail: process.env.NODE_ENV === "production" ? undefined : error?.message,
-      code: error?.code || "AI_UNAVAILABLE",
-      retryable: error?.code !== "AI_NOT_CONFIGURED",
-      provider: DEFAULT_PROVIDER,
-      model: DEFAULT_MODEL
+      error: "Tutor sedang mengalami gangguan sementara. Silakan coba lagi beberapa saat.",
+      retryable: error?.code !== "AI_NOT_CONFIGURED"
     });
   }
 }

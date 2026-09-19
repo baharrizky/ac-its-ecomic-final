@@ -53,3 +53,33 @@ body{background:#f8f7fc}.ac-sidebar{box-shadow:0 0 0 1px rgba(80,50,150,.02)}.ac
 .ai-response-block + .ai-response-block { margin-top: 10px; }
 .ai-math-display { display: block; margin: 10px 0; overflow-x: auto; }
 .ai-response .katex { font-size: 1.02em; }
+
+/* v16.3 UX: fluid desktop/mobile scrolling and stable Tutor layout */
+html{scroll-behavior:smooth}
+body{overflow-x:hidden;overflow-y:auto}
+.ac-app{width:100%;min-height:100vh}
+.ac-main{min-height:100vh;overflow:visible}
+.ac-content{min-height:calc(100vh - 76px);overflow:visible}
+.tutor-page{min-width:0;padding-bottom:28px}
+.tutor-page .split{align-items:stretch}
+.tutor-page .chat{height:min(62vh,620px);min-height:420px}
+.tutor-page .chat-messages{min-height:0;overscroll-behavior:contain;scroll-behavior:smooth}
+.tutor-page .side-stack{min-width:0}
+@media(max-width:1100px){.tutor-page .chat{height:55vh;min-height:360px}}
+@media(max-width:760px){.tutor-page .chat{height:58vh;min-height:320px}.tutor-page .chat-messages{padding-bottom:8px}.tutor-page .chat-input{position:sticky;bottom:0;background:#fff;z-index:3}.tutor-page{padding-bottom:16px}}
+
+/* v16.3.1: prevent nested layout from trapping the Windows page scrollbar */
+.ac-app,.ac-main,.ac-content{overflow:visible!important}
+.tutor-page{overflow:visible!important}
+.tutor-page .chat{contain:none}
+.tutor-page .chat-messages{overflow-y:auto!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch}
+
+/* v16.4 UX: student-facing interface stays clean; technical diagnostics remain server-side. */
+.tutor-ready-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:linear-gradient(180deg,#fbf9ff,#fff);border-color:#e6ddff}
+.tutor-ready-banner .subtle{flex:1;min-width:220px}
+html,body,#root{min-height:100%;overflow-x:hidden}
+body{overscroll-behavior-y:auto}
+.ac-main,.ac-content{overscroll-behavior:auto}
+.chat-messages{scrollbar-gutter:stable;overscroll-behavior-y:contain}
+.ecomic-nav{overscroll-behavior:contain}
+@media(min-width:761px){.chat{max-height:calc(100vh - 250px)}}

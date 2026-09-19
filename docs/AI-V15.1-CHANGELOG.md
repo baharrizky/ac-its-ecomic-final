@@ -6,5 +6,5 @@
 - AI Correction sekarang memakai JSON Schema eksplisit.
 - Respons Gemini kosong/terblokir ditangani sebagai error terkontrol.
 - Retry untuk 429/5xx dan timeout dipertahankan.
-- `/api/ai-status` dibuat lebih informatif tanpa membuka secret.
+- Status operasional AI dipindahkan ke sisi server dan tidak ditampilkan kepada pengguna akhir.
 - Package version: 0.4.1.

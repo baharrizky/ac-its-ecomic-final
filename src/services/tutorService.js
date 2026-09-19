@@ -44,9 +44,8 @@ export async function getTutorReply({ message, context, history }) {
     const concept = context?.conceptName || context?.conceptId || "konsep yang sedang dipelajari";
     const comic = context?.comicTitle || "comic ini";
     return {
-      reply: `AI sedang tidak dapat terhubung. Namun sistem belajar tetap berjalan. Coba kembali ke ${comic} dan perhatikan bagian ${concept}, lalu tanyakan lagi.`,
-      ai:false, unavailable:true,
-      aiError:error?.message || "AI unavailable", code:error?.code || "AI_UNAVAILABLE", status:error?.status || null
+      reply: `Tutor sedang mengalami gangguan sementara. Kamu tetap bisa melanjutkan belajar dari ${comic}. Coba baca kembali bagian ${concept}, lalu tanyakan lagi beberapa saat kemudian.`,
+      ai:false, unavailable:true
     };
   }
 }
@@ -56,7 +55,7 @@ export async function correctAnswerWithAI({ question, selectedAnswer, correctAns
     return await callEndpoint({ mode:"correct", question, selectedAnswer, correctAnswer, baselineDiagnosis, context }, { retries:1 });
   } catch (error) {
     console.error("AI correction failed", error);
-    return { ...baselineDiagnosis, ai:false, unavailable:true, aiError:error?.message || "AI unavailable", code:error?.code || "AI_UNAVAILABLE" };
+    return { ...baselineDiagnosis, ai:false, unavailable:true };
   }
 }
 
@@ -65,7 +64,7 @@ export async function recommendNextQuestion({ studentModel, questions, recentAtt
     return await callEndpoint({ mode:"recommend", studentModel, questions, recentAttempts }, { retries:1, timeoutMs:22000 });
   } catch (error) {
     console.error("AI recommendation failed", error);
-    return { ai:false, unavailable:true, questionId:null, reason:"Adaptive engine lokal digunakan karena AI belum tersedia." };
+    return { ai:false, unavailable:true, questionId:null, reason:"Latihan berikut dipilih berdasarkan perkembangan belajarmu." };
   }
 }
 
@@ -74,12 +73,7 @@ export async function getTeacherRecommendation({ student, studentModel, attempts
     return await callEndpoint({ mode:"teacher_recommend", student, studentModel, attempts, events }, { retries:1, timeoutMs:22000 });
   } catch (error) {
     console.error("AI teacher recommendation failed", error);
-    return { ai:false, unavailable:true, summary:"AI belum tersedia untuk rekomendasi guru.", priorityConcepts:[], recommendations:[], nextActivity:"Gunakan data mastery dan miskonsepsi pada student model.", teacherNote:"" };
+    return { ai:false, unavailable:true, summary:"Rekomendasi dibuat berdasarkan data pembelajaran yang tersedia.", priorityConcepts:[], recommendations:[], nextActivity:"Gunakan prioritas konsep dan aktivitas belajar siswa sebagai dasar tindak lanjut.", teacherNote:"" };
   }
 }
 
-export async function testAIConnection() {
-  const response = await fetch("/api/ai-test", { method:"GET", cache:"no-store" });
-  const data = await response.json().catch(()=>({}));
-  return { ...data, httpStatus:response.status };
-}
