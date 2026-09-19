@@ -34,8 +34,6 @@ import ReflectionPage from "./pages/student/ReflectionPage";
 import AttendancePage from "./pages/student/AttendancePage";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import { listClassesForTeacher } from "./services/accessControlService";
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import { listClassesForTeacher } from "./services/accessControlService";
 
 const emptyModel=(conceptList=[])=>createEmptyStudentModel(Object.fromEntries((conceptList||[]).map(c=>[c.id,c])));
 const fallback={comics:[],questions:[],studentModel:emptyModel(),screen:null,selectedComicId:null,currentReaderContext:null};
