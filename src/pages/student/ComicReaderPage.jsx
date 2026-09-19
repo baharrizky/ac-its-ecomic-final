@@ -9,7 +9,7 @@ import katex from "katex";
 const tabs=[{id:"tutor",label:"Tutor",icon:MessageCircle},{id:"tokoh",label:"Tokoh",icon:Users},{id:"kuis",label:"Kuis",icon:ClipboardList},{id:"materi",label:"Materi",icon:BookOpen},{id:"progres",label:"Progres",icon:TrendingUp}];
 const renderEquation=v=>{if(!v)return null;try{return katex.renderToString(v,{displayMode:true,throwOnError:false})}catch{return v}};
 
-export default function ComicReaderPage({comic,studentModel,questions=[],navigate,onPanelViewed,onAnswer,onAIExplain}){
+export default function ComicReaderPage({comic,studentModel,questions=[],navigate,onPanelViewed,onAnswer,onAIExplain,session}){
  const [ei,setEi]=useState(0),[pi,setPi]=useState(0),[focusMode,setFocusMode]=useState(false),[infoTab,setInfoTab]=useState("tutor"),[quizSelected,setQuizSelected]=useState(null),[quizDiagnosis,setQuizDiagnosis]=useState(null),[aiReply,setAiReply]=useState(""),[loadingAI,setLoadingAI]=useState(false);
  const panelStartedAt=useRef(Date.now());
  const lastPanelRef=useRef({comicId:comic?.id,episodeIndex:0,panelIndex:0});
@@ -41,7 +41,7 @@ export default function ComicReaderPage({comic,studentModel,questions=[],navigat
  function prev(){if(pi>0)setPi(v=>v-1);else if(ei>0){const e=ei-1;setEi(e);setPi(Math.max(0,(comic.episodes[e].panels?.length||1)-1))}}
  function jumpToEpisode(i){setEi(i);setPi(0)}
  async function answerQuiz(i){if(quizDiagnosis||!activeQuestion||!onAnswer)return;setQuizSelected(i);const duration=Math.floor((Date.now()-quizStartedAt.current)/1000);const d=await onAnswer(activeQuestion,i,"reader-quiz",duration);setQuizDiagnosis(d)}
- async function askAI(){if(!onAIExplain)return;setLoadingAI(true);try{const r=await onAIExplain({message:`Jelaskan panel ini dengan bahasa siswa ${studentModel?.currentLevel||1}. Fokus pada konsep ${conceptName}.`,context:{comicTitle:comic.title,episodeTitle:episode.title,panelTitle:panel.title,narration:panel.narration,dialogue:panel.dialogue,equation:panel.equation,conceptId,conceptName,mastery}});setAiReply(r?.reply||"")}finally{setLoadingAI(false)}}
+ async function askAI(){if(!onAIExplain)return;setLoadingAI(true);try{const r=await onAIExplain({message:`Jelaskan panel ini dengan bahasa siswa ${studentModel?.currentLevel||1}. Fokus pada konsep ${conceptName}.`,context:{comicTitle:comic.title,episodeTitle:episode.title,panelTitle:panel.title,narration:panel.narration,dialogue:panel.dialogue,equation:panel.equation,conceptId,conceptName,studentMastery:mastery,educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school,currentLevel:studentModel?.currentLevel||1}});setAiReply(r?.reply||"")}finally{setLoadingAI(false)}}
  const content=<div className={`reader-page ${focusMode?"reader-page-focus":""}`}>
   <div className="reader-toolbar"><button className="btn" onClick={()=>navigate("comic-library")}>← Koleksi</button><div className="reader-breadcrumb"><strong>{comic.title}</strong><span>Episode {ei+1} · {episode.title}</span></div><div className="reader-actions"><span className="reader-progress-pill">{overallProgress}% selesai</span><button className="btn" onClick={()=>setFocusMode(v=>!v)}>{focusMode?<Minimize2 size={16}/>:<Maximize2 size={16}/>} {focusMode?"Kembali ke normal":"Mode baca"}</button>{focusMode&&<button className="reader-icon-close" onClick={()=>setFocusMode(false)}><X size={18}/></button>}</div></div>
   <div className="reader-shell">

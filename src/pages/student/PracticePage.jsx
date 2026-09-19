@@ -25,10 +25,18 @@ export default function PracticePage({ questions = [], studentModel, onAnswer, o
 
   async function choose(i){ if(diagnosis) return; setSelected(i); const d=await onAnswer(q,i,"practice"); setDiagnosis(d); setAiReply(""); }
   async function askAI(){ if(!diagnosis || !onAIExplain) return; setLoadingAI(true); try { const r=await onAIExplain({message:`Jelaskan mengapa jawaban ${String.fromCharCode(65+selected)} pada soal berikut ${diagnosis.correct?"benar":"belum tepat"}. Berikan langkah singkat dan tunjukkan konsep yang perlu diperhatikan.`, context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName:concepts[q.conceptId]?.name}}); setAiReply(r?.reply || "Belum ada penjelasan AI."); } finally { setLoadingAI(false); } }
-  async function next(){ if(index>=published.length-1){setDone(true);await onFinish?.();return;} setSelected(null);setDiagnosis(null);setAiReply("");setIndex(v=>v+1); }
+  async function next(){
+    const rec=diagnosis?.recommendation;
+    if(rec?.questionId){
+      const nextIndex=published.findIndex(item=>item.id===rec.questionId);
+      if(nextIndex>=0){setSelected(null);setDiagnosis(null);setAiReply("");setIndex(nextIndex);return;}
+    }
+    if(index>=published.length-1){setDone(true);await onFinish?.();return;}
+    setSelected(null);setDiagnosis(null);setAiReply("");setIndex(v=>v+1);
+  }
 
   return <div>
-    <div className="page-kicker">Adaptive Practice</div><h1 className="page-title">Latihan Berjenjang</h1><p className="page-desc">Soal dipilih berdasarkan student model. {recommendation.reason}</p>
+    <div className="page-kicker">Adaptive Practice</div><h1 className="page-title">Latihan Berjenjang</h1><p className="page-desc">Soal dipilih berdasarkan student model dan dapat disesuaikan lagi oleh AI setelah setiap jawaban. {recommendation.reason}</p>
     <div className="split" style={{marginTop:18}}>
       <section className="card">
         <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><Badge tone="blue">{q.conceptId} · {concepts[q.conceptId]?.name||q.conceptId}</Badge><Badge tone={q.level<=1?"green":"amber"}>Level {q.level||q.difficulty||1}</Badge></div>
@@ -44,7 +52,7 @@ export default function PracticePage({ questions = [], studentModel, onAnswer, o
       </section>
       <aside className="side-stack">
         <div className="card"><div className="label">Student Model</div><div style={{fontSize:28,fontWeight:900}}>{Math.round((studentModel.overallMastery||0)*100)}%</div><div className="subtle">overall mastery</div><div className="progress" style={{marginTop:8}}><span style={{width:`${(studentModel.overallMastery||0)*100}%`}}/></div></div>
-        <div className="card"><div className="label">Adaptive Decision</div><p style={{fontSize:13}}><strong>{recommendation.type === "remedial" ? "Remedial" : "Practice"}</strong></p><p className="subtle">{recommendation.reason}</p><div className="list-item"><span>Konsep terlemah</span><strong>{recommendation.conceptId||"-"}</strong></div></div>
+        <div className="card"><div className="label">Adaptive Decision</div><p style={{fontSize:13}}><strong>{recommendation.type === "remedial" ? "Remedial" : recommendation.type === "challenge" ? "Challenge" : "Practice"}</strong></p><p className="subtle">{recommendation.reason}</p><div className="list-item"><span>Konsep prioritas</span><strong>{recommendation.conceptId||"-"}</strong></div><div className="list-item"><span>Target level</span><strong>{recommendation.targetLevel||1}</strong></div>{diagnosis?.recommendation?.reason&&<div className="ai-feedback"><strong>Keputusan AI berikutnya</strong><p>{diagnosis.recommendation.reason}</p></div>}</div>
         <div className="card"><div className="label">Progress Sesi</div><strong>{index+1} / {published.length}</strong><div className="progress" style={{marginTop:8}}><span style={{width:`${((index+1)/published.length)*100}%`}}/></div></div>
       </aside>
     </div>

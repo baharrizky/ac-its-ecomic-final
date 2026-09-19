@@ -8,6 +8,7 @@ export function updateMastery(studentModel, conceptId, diagnosis) {
   const concepts = { ...studentModel.concepts, [conceptId]: { ...old, mastery, confidence, attempts, correct } };
   const values = Object.values(concepts).map(x=>Number(x.mastery||0));
   const overallMastery = values.length ? values.reduce((a,b)=>a+b,0)/values.length : 0;
+  const currentLevel = overallMastery < 0.35 ? 1 : overallMastery < 0.65 ? 2 : 3;
   let misconceptions = [...(studentModel.misconceptions || [])];
   if(!diagnosis.correct && diagnosis.misconceptionTag){
     misconceptions.unshift({conceptId,tag:diagnosis.misconceptionTag,confidence:diagnosis.confidence,resolved:false,detectedAt:new Date().toISOString()});
@@ -15,5 +16,5 @@ export function updateMastery(studentModel, conceptId, diagnosis) {
   if(diagnosis.correct){
     misconceptions = misconceptions.map(m => m.conceptId===conceptId && !m.resolved ? {...m,resolved:true,resolvedAt:new Date().toISOString()} : m);
   }
-  return {...studentModel,concepts,overallMastery,misconceptions:misconceptions.slice(0,30),totalAttempts:(studentModel.totalAttempts||0)+1,totalCorrect:(studentModel.totalCorrect||0)+(diagnosis.correct?1:0)};
+  return {...studentModel,concepts,overallMastery,currentLevel,misconceptions:misconceptions.slice(0,30),totalAttempts:(studentModel.totalAttempts||0)+1,totalCorrect:(studentModel.totalCorrect||0)+(diagnosis.correct?1:0)};
 }
