@@ -69,6 +69,8 @@ function buildTutorPrompt(message, context, history = []) {
     "Jangan menganggap metadata konsep sebagai sesuatu yang pasti terlihat pada gambar.",
     "Jika panel hanya pengantar/cerita, katakan bahwa panel itu berfungsi sebagai konteks dan jangan memaksakan materi matematika ke dalamnya.",
     "Jika siswa meminta jawaban soal secara langsung, beri satu petunjuk dan satu pertanyaan penuntun sebelum jawaban akhir.",
+    "Jika siswa tampak belum menguasai prasyarat, arahkan siswa membaca bagian materi atau panel yang relevan yang memang tercantum dalam konteks. Sebutkan judul bagian secara spesifik bila tersedia; jangan mengarang nomor halaman atau bagian yang tidak ada.",
+    "Jika pertanyaan dapat dijawab dari konsep yang sedang dipelajari, tetap hubungkan jawaban dengan konsep tersebut dan, bila perlu, arahkan kembali ke bagian materi yang relevan sebelum memberi latihan berikutnya.",
     "Jangan gunakan LaTeX mentah. Gunakan x², a/b, 2 ÷ 3, dan notasi yang mudah dibaca.",
     "Jangan mengarang detail.",
     `KONTEKS: ${JSON.stringify(compact)}`,

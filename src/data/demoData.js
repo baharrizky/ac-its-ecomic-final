@@ -1,11 +1,4 @@
-export const concepts = {
-  E1: { id: "E1", name: "Definisi Eksponen", prerequisiteIds: [] },
-  E2: { id: "E2", name: "Perkalian Eksponen", prerequisiteIds: ["E1"] },
-  E3: { id: "E3", name: "Pembagian Eksponen", prerequisiteIds: ["E1"] },
-  E10: { id: "E10", name: "Pertumbuhan & Peluruhan Eksponensial", prerequisiteIds: ["E2"] },
-  L1: { id: "L1", name: "Konsep Dasar Logaritma", prerequisiteIds: [] },
-  L2: { id: "L2", name: "Persamaan Logaritma", prerequisiteIds: ["L1"] },
-};
+export const concepts = {};
 
 export const initialComics = [
   {

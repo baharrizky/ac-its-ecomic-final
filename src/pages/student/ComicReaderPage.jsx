@@ -1,7 +1,7 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
 import { BookOpen, CheckCircle2, ClipboardList, Info, Lightbulb, Maximize2, MessageCircle, Minimize2, PanelRight, PlayCircle, TrendingUp, Users, X } from "lucide-react";
 import Badge from "../../components/common/Badge";
-import { concepts } from "../../data/demoData";
+import { listConcepts } from "../../services/conceptService";
 import MediaImage from "../../components/media/MediaImage";
 import "katex/dist/katex.min.css";
 import katex from "katex";
@@ -12,7 +12,9 @@ const renderEquation=v=>{if(!v)return null;try{return katex.renderToString(v,{di
 
 export default function ComicReaderPage({comic,studentModel,questions=[],navigate,onPanelViewed,onAnswer,onAIExplain,onTutorSend,tutorMessages=[],readerContext,session}){
  const [ei,setEi]=useState(Number.isInteger(readerContext?.episodeIndex)?readerContext.episodeIndex:0),[pi,setPi]=useState(Number.isInteger(readerContext?.panelIndex)?readerContext.panelIndex:0),[focusMode,setFocusMode]=useState(false),[infoTab,setInfoTab]=useState("tutor"),[quizSelected,setQuizSelected]=useState(null),[quizDiagnosis,setQuizDiagnosis]=useState(null),[tutorInput,setTutorInput]=useState(""),[tutorBusy,setTutorBusy]=useState(false);
+ const [concepts,setConcepts]=useState({});
  const tutorMessagesRef=useRef(null);
+ useEffect(()=>{let alive=true;listConcepts().then(items=>{if(alive)setConcepts(Object.fromEntries(items.map(c=>[c.id,c])))}).catch(()=>{});return()=>{alive=false}},[]);
  const panelStartedAt=useRef(Date.now());
  const lastPanelRef=useRef({comicId:comic?.id,episodeIndex:0,panelIndex:0});
  const quizStartedAt=useRef(Date.now());

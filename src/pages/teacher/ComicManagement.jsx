@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import ComicCard from "../../components/comic/ComicCard";
+import ConceptPicker from "../../components/common/ConceptPicker";
 
-const EMPTY_FORM = { title:"", description:"", subject:"Eksponen", educationLevel:"SMA", grade:"X", className:"X IPA 1", status:"Draft", concepts:["E1"] };
+const EMPTY_FORM = { title:"", description:"", subject:"", educationLevel:"SMA", grade:"X", className:"X IPA 1", status:"Draft", concepts:[] };
 
 export default function ComicManagement({ comics, navigate, onCreate, onEdit }) {
   const [search, setSearch] = useState("");
@@ -63,7 +64,7 @@ export default function ComicManagement({ comics, navigate, onCreate, onEdit }) 
               <div className="field"><label className="label">Kelas/Rombel</label><input value={form.className} onChange={e=>setForm({...form,className:e.target.value})}/></div>
             </div>
             <div className="field"><label className="label">Status</label><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>Draft</option><option>Published</option></select></div>
-            <div className="field"><label className="label">Konsep</label><div className="concept-picker">{["E1","E2","E3","E10","L1","L2"].map(id=><button type="button" className={`concept-chip ${form.concepts.includes(id)?"selected":""}`} key={id} onClick={()=>setForm({...form,concepts:form.concepts.includes(id)?form.concepts.filter(x=>x!==id):[...form.concepts,id]})}>{id}</button>)}</div></div>
+            <ConceptPicker value={form.concepts} onChange={concepts=>setForm({...form,concepts})} label="Konsep E-Comic" />
             <div className="actions"><button type="button" className="btn" onClick={()=>setOpen(false)}>Batal</button><button className="btn-primary">Buat & Buka Editor</button></div>
           </form>
         </div>

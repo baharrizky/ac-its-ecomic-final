@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
-import { concepts } from "../../data/demoData";
+import { listConcepts } from "../../services/conceptService";
 import AIResponse from "../../components/common/AIResponse";
 
 export default function TutorPage({comic,studentModel,messages,onSend,readerContext,session}){
@@ -7,7 +7,9 @@ export default function TutorPage({comic,studentModel,messages,onSend,readerCont
  const messagesRef=useRef(null);
  const ei=Number.isInteger(readerContext?.episodeIndex)?readerContext.episodeIndex:0,pi=Number.isInteger(readerContext?.panelIndex)?readerContext.panelIndex:0;
  const episode=comic?.episodes?.[ei];const panel=episode?.panels?.[pi];
- const conceptId=panel?.conceptIds?.[0]||comic?.concepts?.[0]||"E1";
+ const [concepts,setConcepts]=useState({});
+ const conceptId=panel?.conceptIds?.[0]||comic?.concepts?.[0]||"";
+ useEffect(()=>{let alive=true;listConcepts().then(items=>alive&&setConcepts(Object.fromEntries(items.map(c=>[c.id,c])))).catch(()=>{});return()=>{alive=false}},[]);
  useEffect(()=>{
    const el=messagesRef.current;
    if(el) requestAnimationFrame(()=>{el.scrollTop=el.scrollHeight;});

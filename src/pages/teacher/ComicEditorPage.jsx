@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import Badge from "../../components/common/Badge";
 import MediaImage from "../../components/media/MediaImage";
-import { concepts } from "../../data/demoData";
+import ConceptPicker from "../../components/common/ConceptPicker";
 import { saveLocalMedia } from "../../services/mediaService";
 import EquationEditor from "../../components/common/EquationEditor";
 
@@ -122,7 +122,7 @@ export default function ComicEditorPage({ comic, onBack, onSave }) {
                         <div className="field"><label className="label">Dialog</label><textarea rows="2" value={p.dialogue} onChange={e=>patchPanel(pi,{dialogue:e.target.value})}/></div>
                         <div className="field"><label className="label">Tokoh pada panel (pisahkan dengan koma)</label><input value={(p.characters||[]).join(", ")} onChange={e=>patchPanel(pi,{characters:e.target.value.split(",").map(x=>x.trim()).filter(Boolean)})} placeholder="Sari, Riko, Nenek Sari"/></div>
                         <EquationEditor value={p.equation||""} onChange={value=>patchPanel(pi,{equation:value})} label="Persamaan panel (opsional)" />
-                        <div className="field"><label className="label">Konsep terkait</label><div className="concept-picker">{Object.values(concepts).map(c=><button type="button" key={c.id} className={`concept-chip ${p.conceptIds.includes(c.id)?"selected":""}`} onClick={()=>patchPanel(pi,{conceptIds:p.conceptIds.includes(c.id)?p.conceptIds.filter(x=>x!==c.id):[...p.conceptIds,c.id]})}>{c.id} · {c.name}</button>)}</div></div>
+                        <ConceptPicker value={p.conceptIds||[]} onChange={conceptIds=>patchPanel(pi,{conceptIds})} label="Konsep terkait" />
                       </div>
                     </div>
                   </div>)}
