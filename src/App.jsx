@@ -7,6 +7,7 @@ import { loadCloudComics,saveCloudComic,subscribeCloudComics,mergeComicCollectio
 import { saveCloudQuestion,deleteCloudQuestion,subscribeCloudQuestions } from "./services/cloudQuestionService";
 import { getSession,logout,getRegisteredStudents,updateUserProfile } from "./services/authService";
 import { getTutorReply, correctAnswerWithAI, recommendNextQuestion, getTeacherRecommendation } from "./services/tutorService";
+import { askPanelAI } from "./services/panelVisionService";
 import { diagnoseAnswer } from "./engine/diagnosisEngine";
 import { updateMastery } from "./engine/masteryEngine";
 import { createEmptyStudentModel,getStudentModel,saveStudentModel,subscribeStudentModel,recordAttempt,recordLearningEvent,saveReflection,listReflections,saveAttendance,listAttendance,listStudentModels,listAttempts,saveExamResult,listExamResults,listLearningEvents,findClassAccessCode } from "./services/learningDataService";
@@ -171,11 +172,19 @@ export default function App(){
  };
  const handleTutor=async(message,context={})=>{
    const history=tutorMessages.slice(-12);
-   const r=await getTutorReply({message,context,history});
+   let r;
+   try {
+     r=context?._panelVision
+       ? await askPanelAI({imageRef:context.imageUrl,question:message})
+       : await getTutorReply({message,context,history});
+   } catch (error) {
+     console.error("Panel AI failed", error);
+     r={reply:"AI belum berhasil membaca gambar panel ini. Coba kirim pertanyaan sekali lagi.",ai:false,unavailable:true,code:error?.code||"PANEL_AI_FAILED"};
+   }
    const userMessage={role:"user",text:message};
-   const assistantMessage={role:"assistant",text:r.reply};
+   const assistantMessage={role:"assistant",text:r.reply||"AI belum memberikan jawaban."};
    setTutorMessages(m=>[...m,userMessage,assistantMessage].slice(-80));
-   if(session?.uid)await recordLearningEvent({uid:session.uid,type:"tutor_message",payload:{message,reply:r.reply||"",context,ai:r.ai,unavailable:r.unavailable||false,provider:r.meta?.provider||null,model:r.meta?.model||null,latencyMs:r.meta?.latencyMs||null,usage:r.meta?.usage||null}});
+   if(session?.uid)await recordLearningEvent({uid:session.uid,type:"tutor_message",payload:{message,reply:r.reply||"",context,ai:r.ai,unavailable:r.unavailable||false,provider:r.meta?.provider||null,model:r.meta?.model||null,latencyMs:r.meta?.latencyMs||null,usage:r.meta?.usage||null,code:r.code||null}});
    return r;
  };
  const handleReaderProgress=async({comic,episodeIndex,panelIndex,durationSeconds=0})=>{if(!session?.uid||!comic)return;const key=`${comic.id}:${episodeIndex}:${panelIndex}`;await recordLearningEvent({uid:session.uid,name:session.name,role:"student",type:"comic_panel_view",comicId:comic.id,episodeIndex,panelIndex,durationSeconds:Number(durationSeconds)||0,createdAt:new Date().toISOString()});if(state.studentModel.completedPanels?.[key]){setState(s=>({...s,currentReaderContext:{comicId:comic.id,episodeIndex,panelIndex}}));return;}const next=touchActivity({...state.studentModel,completedPanels:{...(state.studentModel.completedPanels||{}),[key]:1}},2);const allDone=(comic.episodes||[]).every(ep=>(ep.panels||[]).every((_,pi)=>next.completedPanels?.[`${comic.id}:${comic.episodes.indexOf(ep)}:${pi}`]));if(allDone&&!next.completedComics.includes(comic.id))next.completedComics=[...(next.completedComics||[]),comic.id];setState(s=>({...s,studentModel:next,currentReaderContext:{comicId:comic.id,episodeIndex,panelIndex}}));await saveStudentModel(session.uid,next);};
