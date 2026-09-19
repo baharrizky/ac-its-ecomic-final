@@ -46,7 +46,8 @@ function buildContext(context = {}) {
     educationLevel: clampText(context.educationLevel, 50),
     grade: clampText(context.grade, 50),
     school: clampText(context.school, 180),
-    currentLevel: context.currentLevel ?? null
+    currentLevel: context.currentLevel ?? null,
+    imageUrl: clampText(context.imageUrl, 2000)
   };
 }
 
@@ -61,7 +62,9 @@ function buildTutorPrompt(message, context, history = []) {
     "Kamu adalah AI Tutor matematika dalam platform AC-ITS E-Comic untuk siswa SMP/SMA Indonesia.",
     "Peranmu adalah tutor, bukan mesin pemberi jawaban.",
     "Gunakan bahasa Indonesia yang santai, hangat, jelas, dan sesuai usia siswa.",
+    "Untuk persamaan matematika, jangan tampilkan kode LaTeX mentah atau delimiter matematika LaTeX kepada siswa. Gunakan notasi yang langsung terbaca, misalnya 2 ÷ 3, x², a/b, atau kalimat seperti dua per tiga.",
     "Gunakan konteks E-Comic yang diberikan sebagai sumber utama.",
+    "Jika tersedia gambar panel, perhatikan isi visualnya sebelum menjawab. Bedakan informasi yang benar-benar terlihat pada gambar dari narasi/dialog yang diberikan. Jangan mengarang detail gambar yang tidak terlihat atau tidak jelas.",
     "Jika siswa meminta jawaban langsung, jangan langsung memberikan jawaban akhir. Arahkan kembali ke materi/panel, berikan satu hint kecil, lalu ajukan pertanyaan penuntun.",
     "Jika siswa salah memahami konsep, jelaskan letak konsep yang perlu diperbaiki tanpa mempermalukan siswa.",
     "Jika siswa sudah memahami konsep, berikan tantangan kecil atau arahkan ke latihan berikutnya.",
@@ -81,6 +84,7 @@ function buildCorrectionPrompt(payload) {
     "Evaluasi jawaban siswa berdasarkan soal, pilihan jawaban, jawaban benar, konteks konsep, dan diagnosis awal.",
     "Tujuan evaluasi adalah memperbarui student model, menemukan miskonsepsi, dan menentukan tindak lanjut belajar.",
     "Jangan hanya mengatakan benar/salah. Jelaskan konsep secara singkat dan berikan langkah berikutnya.",
+    "Jika perlu menulis persamaan, gunakan notasi Unicode yang mudah dibaca, bukan LaTeX mentah.",
     "Jika siswa salah, gunakan misconceptionTag UPPER_SNAKE_CASE yang singkat. Jika benar, misconceptionTag harus null.",
     "Balas HANYA dengan JSON valid tanpa markdown dengan struktur: {\"correct\":boolean,\"misconceptionTag\":string|null,\"confidence\":number,\"explanation\":string,\"hint\":string,\"nextStep\":string}",
     `KONTEKS:\n${JSON.stringify(context, null, 2)}`,
@@ -144,6 +148,40 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   finally { clearTimeout(timer); }
 }
 
+async function imageUrlToInlineData(imageUrl) {
+  const value = String(imageUrl || '').trim();
+  if (!value) return null;
+  if (value.startsWith('data:image/')) {
+    const match = value.match(/^data:(image\/[^;]+);base64,(.+)$/s);
+    return match ? { mimeType: match[1], data: match[2] } : null;
+  }
+  let url;
+  try { url = new URL(value); } catch { return null; }
+  const host = url.hostname.toLowerCase();
+  const allowed = host === 'firebasestorage.googleapis.com' || host === 'storage.googleapis.com' || host.endsWith('.firebasestorage.app');
+  if (!allowed) return null;
+  const response = await fetchWithTimeout(url.toString(), { method:'GET', headers:{Accept:'image/*'} }, Math.min(DEFAULT_TIMEOUT_MS, 10000));
+  if (!response.ok) return null;
+  const contentType = (response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+  if (!contentType.startsWith('image/')) return null;
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length || buffer.length > 8 * 1024 * 1024) return null;
+  return { mimeType: contentType, data: buffer.toString('base64') };
+}
+
+async function buildGeminiParts(prompt, options = {}) {
+  const parts = [{ text: prompt }];
+  if (options.imageUrl) {
+    try {
+      const image = await imageUrlToInlineData(options.imageUrl);
+      if (image) parts.push({ inlineData: image });
+    } catch (error) {
+      console.warn('AI image context unavailable', { message:error?.message || 'unknown' });
+    }
+  }
+  return parts;
+}
+
 async function callGemini(prompt, options = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -162,7 +200,7 @@ async function callGemini(prompt, options = {}) {
   if (options.thinkingLevel) generationConfig.thinkingConfig = { thinkingLevel: options.thinkingLevel };
 
   const payload = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    contents: [{ role: "user", parts: await buildGeminiParts(prompt, options) }],
     generationConfig
   };
   if (options.systemInstruction) payload.systemInstruction = { parts: [{ text: options.systemInstruction }] };
@@ -263,7 +301,8 @@ export default async function handler(req, res) {
     const message = clampText(body.message, 3000).trim();
     if (!message) return json(res, 400, { error: "Message is required" });
     const history = Array.isArray(body.history) ? body.history : [];
-    const response = await callAI(buildTutorPrompt(message, body.context || {}, history), { thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low", maxOutputTokens: 1400, temperature: 0.45 });
+    const tutorContext = body.context || {};
+    const response = await callAI(buildTutorPrompt(message, tutorContext, history), { imageUrl:tutorContext.imageUrl, thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low", maxOutputTokens: 1400, temperature: 0.45 });
     return json(res, 200, { reply: response.text, ai: true, meta: { ...response.meta, totalLatencyMs: Date.now() - startedAt } });
   } catch (error) {
     console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });

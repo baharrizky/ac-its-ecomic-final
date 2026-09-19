@@ -3,6 +3,7 @@ import Badge from "../../components/common/Badge";
 import { chooseNextActivity } from "../../engine/adaptiveEngine";
 import { concepts } from "../../data/demoData";
 import katex from "katex";
+import AIResponse from "../../components/common/AIResponse";
 import "katex/dist/katex.min.css";
 
 function renderEquation(value){ if(!value) return null; try{return katex.renderToString(value,{displayMode:true,throwOnError:false});}catch{return value;} }
@@ -44,10 +45,10 @@ export default function PracticePage({ questions = [], studentModel, onAnswer, o
         {q.equation&&<div className="equation-preview" dangerouslySetInnerHTML={{__html:renderEquation(q.equation)}}/>}
         <div style={{marginTop:12}}>{q.options.map((o,i)=><button key={`${q.id}-${i}`} className="option" onClick={()=>choose(i)} disabled={!!diagnosis} style={selected===i?{borderColor:i===q.answer?"#10b981":"#ef4444",background:i===q.answer?"#ecfdf5":"#fff1f2"}:{}}>{String.fromCharCode(65+i)}. {o}</button>)}</div>
         {diagnosis&&<div className={`feedback ${diagnosis.correct?"good":"bad"}`}>
-          <strong>{diagnosis.correct?"Benar!":"Belum tepat."}</strong><div style={{marginTop:4}}>{diagnosis.explanation}</div>
+          <strong>{diagnosis.correct?"Benar!":"Belum tepat."}</strong><div style={{marginTop:4}}><AIResponse text={diagnosis.explanation}/></div>
           {!diagnosis.correct&&<div style={{marginTop:5}}>Diagnosis: <b>{diagnosis.misconceptionTag}</b></div>}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"AI sedang menjelaskan…":"Minta AI jelaskan"}</button><button className="btn-primary" onClick={next}>{index>=published.length-1?"Selesai":"Soal Berikutnya →"}</button></div>
-          {aiReply&&<div className="ai-feedback"><strong>AI Tutor</strong><p>{aiReply}</p></div>}
+          {aiReply&&<div className="ai-feedback"><strong>AI Tutor</strong><AIResponse text={aiReply}/></div>}
         </div>}
       </section>
       <aside className="side-stack">
