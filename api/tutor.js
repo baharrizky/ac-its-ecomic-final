@@ -148,25 +148,36 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   finally { clearTimeout(timer); }
 }
 
+function parseInlineImageData(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/^data:(image\/[^;]+);base64,(.+)$/s);
+  if (!match) return null;
+  const mimeType = match[1].toLowerCase();
+  const data = match[2].replace(/\s+/g, "");
+  if (!mimeType.startsWith("image/") || !data) return null;
+  const approxBytes = Math.floor((data.length * 3) / 4);
+  if (approxBytes <= 0 || approxBytes > 12 * 1024 * 1024) return null;
+  return { mimeType, data, bytes: approxBytes };
+}
+
 async function imageUrlToInlineData(imageUrl) {
   const value = String(imageUrl || '').trim();
   if (!value) return null;
-  if (value.startsWith('data:image/')) {
-    const match = value.match(/^data:(image\/[^;]+);base64,(.+)$/s);
-    return match ? { mimeType: match[1], data: match[2] } : null;
-  }
+  const inline = parseInlineImageData(value);
+  if (inline) return inline;
   let url;
   try { url = new URL(value); } catch { return null; }
   const host = url.hostname.toLowerCase();
   const allowed = host === 'firebasestorage.googleapis.com' || host === 'storage.googleapis.com' || host.endsWith('.firebasestorage.app');
   if (!allowed) return null;
-  const response = await fetchWithTimeout(url.toString(), { method:'GET', headers:{Accept:'image/*'} }, Math.min(DEFAULT_TIMEOUT_MS, 10000));
+  const response = await fetchWithTimeout(url.toString(), { method:'GET', headers:{Accept:'image/*'} }, Math.min(DEFAULT_TIMEOUT_MS, 12000));
   if (!response.ok) return null;
   const contentType = (response.headers.get('content-type') || '').split(';')[0].toLowerCase();
   if (!contentType.startsWith('image/')) return null;
   const buffer = Buffer.from(await response.arrayBuffer());
-  if (!buffer.length || buffer.length > 8 * 1024 * 1024) return null;
-  return { mimeType: contentType, data: buffer.toString('base64') };
+  if (!buffer.length || buffer.length > 12 * 1024 * 1024) return null;
+  return { mimeType: contentType, data: buffer.toString('base64'), bytes: buffer.length };
 }
 
 async function buildGeminiParts(prompt, options = {}) {
@@ -174,22 +185,28 @@ async function buildGeminiParts(prompt, options = {}) {
   let imageAttached = false;
   let imageBytes = 0;
   let imageMimeType = null;
-  if (options.imageUrl) {
+
+  // Preferred path: the browser already resolved cloud-media:// to actual
+  // base64. This avoids asking the Vercel function to understand app-specific
+  // media references.
+  let image = parseInlineImageData(options.imageData || "");
+  if (!image && options.imageUrl) {
     try {
-      const image = await imageUrlToInlineData(options.imageUrl);
-      if (image) {
-        // Put the image first so the model receives the visual context before the instruction.
-        parts.push({ inline_data: { mime_type: image.mimeType, data: image.data } });
-        imageAttached = true;
-        imageBytes = image.data.length;
-        imageMimeType = image.mimeType;
-      } else {
-        console.warn('AI_IMAGE_NOT_ATTACHED', { reason:'image_fetch_or_validation_failed' });
-      }
+      image = await imageUrlToInlineData(options.imageUrl);
     } catch (error) {
-      console.warn('AI_IMAGE_NOT_ATTACHED', { message:error?.message || 'unknown' });
+      console.warn("AI_IMAGE_FETCH_ERROR", { message: error?.message || "unknown" });
     }
   }
+
+  if (image) {
+    parts.push({ inline_data: { mime_type: image.mimeType, data: image.data } });
+    imageAttached = true;
+    imageBytes = image.bytes || Math.floor((image.data.length * 3) / 4);
+    imageMimeType = image.mimeType;
+  } else if (options.imageExpected) {
+    console.warn("AI_IMAGE_NOT_ATTACHED", { reason: "no_valid_image_payload" });
+  }
+
   parts.push({ text: prompt });
   return { parts, imageAttached, imageBytes, imageMimeType };
 }
@@ -203,7 +220,7 @@ async function callGemini(prompt, options = {}) {
   }
 
   const model = options.model || DEFAULT_MODEL;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const generationConfig = {
     maxOutputTokens: options.maxOutputTokens || 1200,
     temperature: options.temperature ?? 0.4
@@ -224,7 +241,7 @@ async function callGemini(prompt, options = {}) {
     try {
       const response = await fetchWithTimeout(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       }, DEFAULT_TIMEOUT_MS);
       const data = await response.json().catch(() => ({}));
@@ -315,7 +332,14 @@ export default async function handler(req, res) {
     if (!message) return json(res, 400, { error: "Message is required" });
     const history = Array.isArray(body.history) ? body.history : [];
     const tutorContext = body.context || {};
-    const response = await callAI(buildTutorPrompt(message, tutorContext, history), { imageUrl:tutorContext.imageUrl, thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low", maxOutputTokens: 1400, temperature: 0.45 });
+    const response = await callAI(buildTutorPrompt(message, tutorContext, history), {
+      imageData: body.imageData || "",
+      imageUrl: tutorContext.imageUrl,
+      imageExpected: Boolean(body.imageData || tutorContext.imageUrl),
+      thinkingLevel: process.env.GEMINI_TUTOR_THINKING || "low",
+      maxOutputTokens: 1400,
+      temperature: 0.45
+    });
     return json(res, 200, { reply: response.text, ai: true, meta: response.meta });
   } catch (error) {
     console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });

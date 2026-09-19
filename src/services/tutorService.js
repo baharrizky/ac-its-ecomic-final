@@ -12,26 +12,48 @@ function blobToDataUrl(blob) {
 
 async function resolveTutorImage(imageRef) {
   const value = String(imageRef || "").trim();
-  if (!value) return "";
-  if (value.startsWith("data:image/")) return value;
-  if (!value.startsWith("local-media://") && !value.startsWith("cloud-media://")) return value;
+  if (!value) return null;
+  if (value.startsWith("data:image/")) {
+    const match = value.match(/^data:(image\/[^;]+);base64,(.+)$/s);
+    if (!match) throw new Error("Format gambar panel tidak valid.");
+    return { dataUrl: value, mimeType: match[1], base64: match[2] };
+  }
+  if (!value.startsWith("local-media://") && !value.startsWith("cloud-media://")) {
+    return { imageUrl: value };
+  }
 
   const media = await getLocalMedia(value);
-  if (!media) throw new Error("Gambar panel tidak dapat diambil dari penyimpanan.");
+  if (!media) throw new Error("PANEL_IMAGE_NOT_FOUND");
+  let dataUrl = "";
   if (typeof media === "string") {
-    if (!media.startsWith("data:image/")) throw new Error("Format gambar panel tidak valid.");
-    return media;
+    dataUrl = media;
+  } else if (typeof Blob !== "undefined" && media instanceof Blob) {
+    dataUrl = await blobToDataUrl(media);
+  } else {
+    throw new Error("PANEL_IMAGE_UNSUPPORTED");
   }
-  if (typeof Blob !== "undefined" && media instanceof Blob) return blobToDataUrl(media);
-  throw new Error("Format media panel tidak didukung.");
+  const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/s);
+  if (!match) throw new Error("PANEL_IMAGE_INVALID_DATA");
+  return { dataUrl, mimeType: match[1], base64: match[2] };
 }
 
 async function prepareTutorPayload(payload) {
   const context = payload?.context || {};
   const imageRef = context.imageUrl || "";
-  if (!imageRef || imageRef.startsWith("data:image/")) return payload;
-  const imageDataUrl = await resolveTutorImage(imageRef);
-  return { ...payload, context: { ...context, imageUrl: imageDataUrl } };
+  if (!imageRef) return payload;
+
+  const image = await resolveTutorImage(imageRef);
+  // Keep the media reference in context for UI/debugging, but send the actual
+  // image separately so the server never has to interpret cloud-media://.
+  if (image?.base64) {
+    return {
+      ...payload,
+      imageData: image.base64,
+      imageMime: image.mimeType,
+      context: { ...context, imageUrl: image.dataUrl ? "[panel-image-attached]" : context.imageUrl }
+    };
+  }
+  return { ...payload, context: { ...context, imageUrl: image.imageUrl || imageRef } };
 }
 
 async function callEndpoint(payload, { retries = 1, timeoutMs = 22000 } = {}) {
@@ -72,7 +94,16 @@ async function callEndpoint(payload, { retries = 1, timeoutMs = 22000 } = {}) {
 
 export async function getTutorReply({ message, context, history }) {
   try {
-    const payload = await prepareTutorPayload({ mode:"tutor", message, context, history });
+    let payload;
+    try {
+      payload = await prepareTutorPayload({ mode:"tutor", message, context, history });
+    } catch (imageError) {
+      // Never let a media-resolution problem take the whole Tutor down.
+      // Send the normal textual context so the AI remains available, while
+      // keeping the media error in the browser console for diagnostics.
+      console.warn("Tutor panel image bridge failed; retrying text-only", imageError);
+      payload = { mode:"tutor", message, context, history, imageBridgeError:imageError?.message || "unknown" };
+    }
     return await callEndpoint(payload, { retries:1 });
   } catch (error) {
     console.error("Tutor AI failed", error);
