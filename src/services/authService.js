@@ -100,8 +100,141 @@ export async function registerAccount(form){
   if (!form.school?.trim()) return { ok:false, message:"Sekolah wajib dipilih." };
   if (role === "student" && (!form.educationLevel || !form.grade)) return { ok:false, message:"Jenjang dan kelas siswa wajib dipilih." };
 
+  if (firebaseEnabled && auth) {
+    let credential = null;
+
+    try {
+      if (auth.currentUser?.isAnonymous) { try { await signOut(auth); } catch {} }
+
+      // Buat akun Auth terlebih dahulu. Setelah Auth berhasil, Firestore
+      // mengizinkan akun baru membaca kelas yang masih terbuka sehingga
+      // kita dapat menemukan classId + teacherUid yang tepat.
+      credential = await createUserWithEmailAndPassword(auth, email, form.password);
+      if (credential.user) await updateProfile(credential.user, { displayName: name });
+
+      if (role === "student") {
+        const classMatch = await findOpenClass({
+          school: form.school.trim(),
+          educationLevel: form.educationLevel,
+          grade: form.grade,
+          rombel: form.rombel || "1",
+        });
+
+        // Rules users/{uid} memang mewajibkan classId dan classTeacherUid.
+        // Jangan membuat akun siswa yatim jika kelas belum tersedia.
+        if (!classMatch) {
+          try { await deleteUser(credential.user); } catch {}
+          return {
+            ok:false,
+            message:"Kelas yang dipilih belum dibuka oleh Guru. Pilih kelas lain atau hubungi Guru/Admin."
+          };
+        }
+
+        const now = new Date().toISOString();
+        const profile = {
+          name,
+          email,
+          role:"student",
+          subtitle:"Siswa",
+          educationLevel: form.educationLevel,
+          grade: form.grade,
+          rombel: form.rombel || "1",
+          school: form.school.trim(),
+          classId: classMatch.id,
+          classTeacherUid: classMatch.teacherUid,
+          classTeacherName: classMatch.teacherName || "",
+          classJoinedAt: now,
+          createdAt: now,
+        };
+
+        await setDoc(doc(db, "users", credential.user.uid), profile, { merge:true });
+
+        // Inisialisasi Student Model agar akun langsung siap dipakai
+        // oleh alur ITS/adaptive learning.
+        await setDoc(doc(db, "studentModels_v2", credential.user.uid), {
+          uid: credential.user.uid,
+          teacherUid: classMatch.teacherUid,
+          classId: classMatch.id,
+          mastery: {},
+          misconceptions: [],
+          totalAttempts: 0,
+          createdAt: now,
+          updatedAt: now,
+        }, { merge:true });
+
+        const session = makeSession(profile, credential.user.uid);
+        localStorage.setItem(KEY, JSON.stringify(session));
+        return { ok:true, session };
+      }
+
+      // Registrasi Guru tetap menggunakan kode akses Admin.
+      const invite = await getTeacherRegistrationCode(form.teacherInviteCode);
+      if (!invite || invite.active === false || Number(invite.usedCount || 0) >= Number(invite.maxUses || 1)) {
+        try { await deleteUser(credential.user); } catch {}
+        return { ok:false, message:"Kode akses Admin tidak valid atau sudah digunakan." };
+      }
+
+      const now = new Date().toISOString();
+      const profile = {
+        name,
+        email,
+        role:"teacher",
+        subtitle:"Guru",
+        educationLevel:null,
+        grade:null,
+        rombel:null,
+        school:form.school.trim(),
+        classId:null,
+        classTeacherUid:null,
+        classTeacherName:"",
+        classJoinedAt:null,
+        createdAt:now,
+      };
+
+      await setDoc(doc(db, "users", credential.user.uid), {
+        ...profile,
+        teacherInviteCodeId:invite.id,
+      }, { merge:true });
+
+      const consumed = await consumeTeacherRegistrationCode(form.teacherInviteCode, credential.user.uid);
+      if (!consumed.ok) {
+        try { if (db) await deleteDoc(doc(db, "users", credential.user.uid)); } catch {}
+        try { await deleteUser(credential.user); } catch {}
+        return consumed;
+      }
+
+      const session = makeSession(profile, credential.user.uid);
+      localStorage.setItem(KEY, JSON.stringify(session));
+      return { ok:true, session };
+
+    } catch (error) {
+      console.error("Firebase registration error:", error);
+      if (credential?.user && error?.code !== "auth/email-already-in-use") {
+        // Hapus akun Auth yang terlanjur dibuat hanya jika profil belum
+        // berhasil disimpan. Gagal cleanup tidak mengubah pesan utama.
+        try {
+          const snap = db ? await getDoc(doc(db, "users", credential.user.uid)) : null;
+          if (!snap?.exists()) await deleteUser(credential.user);
+        } catch {}
+      }
+      if (error?.code !== "auth/operation-not-allowed") {
+        return { ok:false, message: firebaseMessage(error) };
+      }
+    }
+  }
+
+  // Fallback lokal/demo.
   let classMatch = null;
-  if (role === "student") classMatch = await findOpenClass({ school: form.school?.trim() || "", educationLevel: form.educationLevel, grade: form.grade, rombel: form.rombel || "1" });
+  if (role === "student") {
+    classMatch = await findOpenClass({
+      school: form.school?.trim() || "",
+      educationLevel: form.educationLevel,
+      grade: form.grade,
+      rombel: form.rombel || "1"
+    });
+    if (!classMatch) return { ok:false, message:"Kelas yang dipilih belum dibuka oleh Guru. Pilih kelas lain atau hubungi Guru/Admin." };
+  }
+
   const profile = {
     name,
     email,
@@ -118,35 +251,11 @@ export async function registerAccount(form){
     createdAt: new Date().toISOString(),
   };
 
-  if (firebaseEnabled && auth) {
-    try {
-      if (auth.currentUser?.isAnonymous) { try { await signOut(auth); } catch {} }
-      const credential = await createUserWithEmailAndPassword(auth, email, form.password);
-      if (credential.user) await updateProfile(credential.user, { displayName: name });
-      if (role === "teacher") {
-        const invite = await getTeacherRegistrationCode(form.teacherInviteCode);
-        if (!invite || invite.active === false || Number(invite.usedCount || 0) >= Number(invite.maxUses || 1)) {
-          try { await deleteUser(credential.user); } catch {}
-          return { ok:false, message:"Kode akses Admin tidak valid atau sudah digunakan." };
-        }
-        if (db) await setDoc(doc(db, "users", credential.user.uid), { ...profile, role:"teacher", teacherInviteCodeId:invite.id }, { merge: true });
-        const consumed = await consumeTeacherRegistrationCode(form.teacherInviteCode, credential.user.uid);
-        if (!consumed.ok) { try { if (db) await deleteDoc(doc(db, "users", credential.user.uid)); } catch {} try { await deleteUser(credential.user); } catch {} return consumed; }
-      } else if (db) {
-        await setDoc(doc(db, "users", credential.user.uid), profile, { merge: true });
-      }
-      const session = makeSession(profile, credential.user.uid);
-      localStorage.setItem(KEY, JSON.stringify(session));
-      return { ok:true, session };
-    } catch (error) {
-      if (error?.code !== "auth/operation-not-allowed") return { ok:false, message: firebaseMessage(error) };
-    }
-  }
-
   if (role === "teacher") {
     const invite = await getTeacherRegistrationCode(form.teacherInviteCode);
     if (!invite || invite.active === false || Number(invite.usedCount || 0) >= Number(invite.maxUses || 1)) return { ok:false, message:"Kode akses Admin tidak valid atau sudah digunakan." };
   }
+
   const existing = readRegisteredAccounts();
   if ([...Object.values(accounts), ...existing].some(a => a.email === email)) {
     return { ok:false, message:"Email sudah terdaftar. Silakan login." };
@@ -157,20 +266,6 @@ export async function registerAccount(form){
   const session = makeSession(profile, localUid);
   localStorage.setItem(KEY, JSON.stringify(session));
   return { ok:true, session };
-}
-
-function firebaseMessage(error){
-  const code = error?.code || "";
-  const map = {
-    "auth/email-already-in-use": "Email sudah terdaftar. Silakan login.",
-    "auth/invalid-email": "Format email tidak valid.",
-    "auth/weak-password": "Password terlalu lemah. Gunakan minimal 6 karakter.",
-    "auth/operation-not-allowed": "Email/Password Authentication belum diaktifkan di Firebase.",
-    "auth/invalid-credential": "Email atau password tidak sesuai.",
-    "auth/user-not-found": "Akun belum terdaftar.",
-    "auth/wrong-password": "Password tidak sesuai.",
-  };
-  return map[code] || `Autentikasi gagal (${code || "unknown"}).`;
 }
 
 export async function getRegisteredStudents(teacherUid = null){

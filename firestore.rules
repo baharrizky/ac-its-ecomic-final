@@ -10,7 +10,27 @@ service cloud.firestore {
     function myClass() { return signedIn() ? me().data.classId : null; }
 
     match /users/{uid} {
-      allow create: if signedIn() && request.auth.uid == uid && (request.resource.data.role == 'student' || (request.resource.data.role == 'teacher' && request.resource.data.teacherInviteCodeId != null && get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.active == true && get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.usedCount < get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.maxUses));
+      allow create: if
+        signedIn()
+        && request.auth.uid == uid
+        && (
+          (
+            request.resource.data.role == 'student'
+            && request.resource.data.classId != null
+            && request.resource.data.classTeacherUid != null
+            && exists(/databases/$(database)/documents/classes_v3/$(request.resource.data.classId))
+            && get(/databases/$(database)/documents/classes_v3/$(request.resource.data.classId)).data.active == true
+            && get(/databases/$(database)/documents/classes_v3/$(request.resource.data.classId)).data.enrollmentOpen == true
+            && get(/databases/$(database)/documents/classes_v3/$(request.resource.data.classId)).data.teacherUid == request.resource.data.classTeacherUid
+          )
+          ||
+          (
+            request.resource.data.role == 'teacher'
+            && request.resource.data.teacherInviteCodeId != null
+            && get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.active == true
+            && get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.usedCount < get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.maxUses
+          )
+        );
       allow read: if isAdmin() || request.auth.uid == uid || (isTeacher() && resource.data.role == 'student' && resource.data.classTeacherUid == request.auth.uid);
       allow update: if isAdmin() || (request.auth.uid == uid && request.resource.data.role == resource.data.role && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','subtitle','educationLevel','grade','rombel','school','classId','classTeacherUid','classTeacherName','classJoinedAt'])) || (isTeacher() && resource.data.role == 'student' && resource.data.classTeacherUid == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['classId','classTeacherUid','classTeacherName','classJoinedAt']));
       allow delete: if isAdmin();
@@ -25,7 +45,11 @@ service cloud.firestore {
 
     match /classes_v3/{classId} {
       allow create: if isTeacher() && request.resource.data.teacherUid == request.auth.uid;
-      allow read: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid) || (signedIn() && resource.data.enrollmentOpen == true && resource.data.active == true);
+      allow read: if
+        isAdmin()
+        || (isTeacher() && resource.data.teacherUid == request.auth.uid)
+        || (signedIn() && resource.data.enrollmentOpen == true && resource.data.active == true)
+        || (signedIn() && !exists(/databases/$(database)/documents/users/$(request.auth.uid)));
       allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid);
     }
 

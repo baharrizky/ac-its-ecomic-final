@@ -1,0 +1,20 @@
+AC-ITS E-Comic — Student Registration Fix
+
+Changed:
+1. src/services/authService.js
+   - Creates Firebase Auth account before class lookup.
+   - Finds an open class using school + educationLevel + grade + rombel.
+   - Refuses registration if the selected class is not open.
+   - Writes classId/classTeacherUid/classTeacherName/classJoinedAt to users/{uid}.
+   - Initializes studentModels_v2/{uid}.
+
+2. firestore.rules
+   - Student user creation requires a valid open class binding.
+   - Newly authenticated users without a users/{uid} profile may read open classes during registration.
+
+Do not include or replace .env.local with this patch.
+After replacing the two files:
+  npm run build
+  git add .
+  git commit -m "Fix student registration class binding"
+  git push
