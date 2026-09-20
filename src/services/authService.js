@@ -273,21 +273,34 @@ export async function getRegisteredStudents(teacherUid = null, teacherClasses = 
   if (firebaseEnabled && db) {
     await ensureFirebaseAuth();
     try {
-      if (teacherUid && Array.isArray(teacherClasses) && teacherClasses.length) {
-        const classIds = teacherClasses.map(c=>c.id).filter(Boolean).slice(0,30);
-        const q = classIds.length ? query(collection(db, "users"), where("classId", "in", classIds)) : query(collection(db, "users"), where("classTeacherUid", "==", teacherUid));
+      // IMPORTANT: query by classTeacherUid because Firestore Rules can prove
+      // that a teacher is allowed to read these student documents. A query
+      // only constrained by classId can be rejected by the /users rule even
+      // when the classId belongs to the teacher.
+      if (teacherUid) {
+        const q = query(collection(db, "users"), where("classTeacherUid", "==", teacherUid));
         const snap = await getDocs(q);
-        return snap.docs.map(d=>({uid:d.id,...d.data()})).filter(s=>s.role==="student" && (s.classTeacherUid===teacherUid || classIds.includes(s.classId)));
+        return snap.docs
+          .map(d=>({uid:d.id,...d.data()}))
+          .filter(s=>s.role === "student" && s.classTeacherUid === teacherUid);
       }
-      const q = teacherUid ? query(collection(db, "users"), where("classTeacherUid", "==", teacherUid)) : query(collection(db, "users"), where("role", "==", "student"));
+
+      const q = query(collection(db, "users"), where("role", "==", "student"));
       const snap = await getDocs(q);
-      return snap.docs.map(d=>({uid:d.id,...d.data()})).filter(s=>s.role==="student");
+      return snap.docs.map(d=>({uid:d.id,...d.data()})).filter(s=>s.role === "student");
     } catch (error) {
-      console.warn("Gagal mengambil daftar siswa dari Firebase:", error);
+      console.error("Gagal mengambil daftar siswa dari Firebase:", error);
+      // Do not silently pretend that there are zero students when Firebase
+      // rejected the query. Local fallback is only used when Firebase itself
+      // is disabled.
+      return [];
     }
   }
+
   const classIds=new Set((teacherClasses||[]).map(c=>c.id));
-  return readRegisteredAccounts().filter(a=>a.role==="student" && (!teacherUid || a.classTeacherUid===teacherUid || classIds.has(a.classId))).map(({password,...profile})=>profile);
+  return readRegisteredAccounts()
+    .filter(a=>a.role === "student" && (!teacherUid || a.classTeacherUid === teacherUid || classIds.has(a.classId)))
+    .map(({password,...profile})=>profile);
 }
 
 export function updateSessionProfile(patch){

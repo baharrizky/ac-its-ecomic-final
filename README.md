@@ -1,23 +1,8 @@
-# AC-ITS V10 — Class-scoped Teacher Workspace
+# V10.1 — Teacher Student Query Fix
 
-Replace these files:
-- src/App.jsx
-- src/services/authService.js
-- src/services/accessControlService.js
-- src/pages/teacher/TeacherDashboard.jsx
-- src/pages/teacher/AnalyticsPage.jsx
-- src/pages/teacher/ComicManagement.jsx
-- src/pages/teacher/TeacherDataPages.jsx
-- firestore.rules
+Replace only:
+`src/services/authService.js`
 
-Main changes:
-- Teacher dashboard refreshes class/student data on mount and has a manual refresh button.
-- Student lookup for a teacher can use the teacher's classId list, not only classTeacherUid.
-- Teacher Grades has School / Kelas / Rombel filters sourced from teacher classes.
-- Analytics has School / Kelas / Rombel filters sourced from teacher classes.
-- E-Comic management has School / Kelas / Rombel filters and creation is attached to one selected class.
-- Teacher attendance is filtered per School / Kelas / Rombel.
-- Firestore users read rule allows a teacher to read a student when the student's classId belongs to a class owned by that teacher.
-- Existing class format remains canonical (e.g. X 1), no X X 1 display.
+Root cause: the previous teacher query used `where("classId", "in", classIds)`. The Firestore `/users` rule authorizes teacher reads using `classTeacherUid == request.auth.uid` (or a per-document class lookup), so the classId-only query can be rejected by Firestore. The student document provided by the user already has the correct `classTeacherUid`, so the authoritative query is `where("classTeacherUid", "==", teacherUid)`.
 
-IMPORTANT: deploy firestore.rules to Firebase, not only the React files to Vercel.
+This patch also avoids silently falling back to localStorage when Firebase is enabled and the query fails; it logs the real Firebase error and returns an empty result instead of masking a permission problem as a real zero-student state.
