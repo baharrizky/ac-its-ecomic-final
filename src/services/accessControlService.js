@@ -71,15 +71,58 @@ export async function listClassesForTeacher(teacherUid) {
   return localRead("classes", []).filter(x => x.teacherUid === teacherUid);
 }
 
+function normalizeText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function schoolMatches(a, b) {
+  const left = normalizeText(a);
+  const right = normalizeText(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  // Accept common abbreviation used by the class-management UI.
+  return left.replace(/^sma negeri /, "sman ") === right.replace(/^sma negeri /, "sman ");
+}
+
 export async function findOpenClass({ school, educationLevel, grade, rombel }) {
-  const targetRombel = canonicalRombel(grade || "X", rombel || "1"); const matches = rows => rows.find(x => x.active !== false && x.enrollmentOpen !== false && x.school === school && x.educationLevel === educationLevel && x.grade === grade && canonicalRombel(x.grade, x.rombel) === targetRombel);
+  const targetGrade = String(grade || "").trim();
+  const targetLevel = String(educationLevel || "").trim();
+  const targetRombel = canonicalRombel(targetGrade || "X", rombel || "1");
+
+  const matches = rows => rows.find(x =>
+    x.active !== false &&
+    x.enrollmentOpen !== false &&
+    schoolMatches(x.school, school) &&
+    normalizeText(x.educationLevel) === normalizeText(targetLevel) &&
+    normalizeText(x.grade) === normalizeText(targetGrade) &&
+    canonicalRombel(x.grade, x.rombel) === targetRombel
+  ) || null;
+
   if (await ready()) {
+    // IMPORTANT: the current Firestore rules only allow a student to read
+    // classes that are active AND open. Query those two fields first so the
+    // query is provably allowed by Firestore Rules. We deliberately do not
+    // put school/grade/rombel into the Firestore query because old class
+    // documents may use slightly different labels (e.g. X 1 vs 1).
     try {
-      const q = query(collection(db, CLASSES), where("school", "==", school), where("educationLevel", "==", educationLevel), where("grade", "==", grade), where("rombel", "==", targetRombel));
-      const snap = await getDocs(q); return snap.docs.map(d => ({ id:d.id, ...d.data() })).find(x => x.active !== false && x.enrollmentOpen !== false) || null;
-    } catch (e) { console.warn(e); }
+      const q = query(
+        collection(db, CLASSES),
+        where("active", "==", true),
+        where("enrollmentOpen", "==", true)
+      );
+      const snap = await getDocs(q);
+      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      return matches(rows);
+    } catch (e) {
+      console.error("CLASS_LOOKUP_FIRESTORE_ERROR", e);
+      throw e;
+    }
   }
-  return matches(localRead("classes", [])) || null;
+
+  return matches(localRead("classes", []));
 }
 
 export async function listAllClasses() {

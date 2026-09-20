@@ -88,6 +88,19 @@ export async function login(role, email, password){
   return { ok:true, session };
 }
 
+function firebaseMessage(error) {
+  const code = error?.code || "";
+  const map = {
+    "auth/email-already-in-use": "Email sudah terdaftar. Silakan login.",
+    "auth/invalid-email": "Format email tidak valid.",
+    "auth/weak-password": "Password terlalu lemah.",
+    "auth/operation-not-allowed": "Metode pendaftaran ini belum diaktifkan di Firebase Authentication.",
+    "permission-denied": "Firebase menolak akses saat mencari kelas. Periksa Firestore Rules untuk classes_v3.",
+    "failed-precondition": "Firestore membutuhkan index untuk pencarian kelas. Periksa pesan index di Console Firebase.",
+  };
+  return map[code] || error?.message || "Pendaftaran gagal. Periksa koneksi Firebase dan coba lagi.";
+}
+
 export async function registerAccount(form){
   const role = form.role;
   const email = form.email.trim().toLowerCase();
@@ -127,7 +140,7 @@ export async function registerAccount(form){
           try { await deleteUser(credential.user); } catch {}
           return {
             ok:false,
-            message:"Kelas yang dipilih belum dibuka oleh Guru. Pilih kelas lain atau hubungi Guru/Admin."
+            message:"Kelas yang dipilih benar-benar tidak ditemukan. Pastikan Guru sudah menyimpan kelas tersebut di Firestore dan pendaftarannya terbuka."
           };
         }
 
@@ -233,7 +246,7 @@ export async function registerAccount(form){
       grade: form.grade,
       rombel: canonicalRombel(form.grade, form.rombel || "1")
     });
-    if (!classMatch) return { ok:false, message:"Kelas yang dipilih belum dibuka oleh Guru. Pilih kelas lain atau hubungi Guru/Admin." };
+    if (!classMatch) return { ok:false, message:"Kelas yang dipilih benar-benar tidak ditemukan. Pastikan Guru sudah menyimpan kelas tersebut di Firestore dan pendaftarannya terbuka." };
   }
 
   const profile = {

@@ -45,11 +45,10 @@ service cloud.firestore {
 
     match /classes_v3/{classId} {
       allow create: if isTeacher() && request.resource.data.teacherUid == request.auth.uid;
-      allow read: if
-        isAdmin()
-        || (isTeacher() && resource.data.teacherUid == request.auth.uid)
-        || (signedIn() && resource.data.enrollmentOpen == true && resource.data.active == true)
-        || (signedIn() && !exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+      // Class metadata is non-sensitive enrollment metadata. Any signed-in
+      // user may read it; the application still only allows students to join
+      // classes where active == true and enrollmentOpen == true.
+      allow read: if signedIn();
       allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid);
     }
 
