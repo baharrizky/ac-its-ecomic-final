@@ -57,12 +57,11 @@ export async function login(role, email, password){
         const roleLabel = profile.role === "teacher" ? "Guru" : profile.role === "admin" ? "Admin" : "Siswa";
         return { ok:false, message:`Akun ini terdaftar sebagai ${roleLabel}. Silakan pilih login yang sesuai.` };
       }
-      if (profile.role === "student" && profile.school && profile.educationLevel && profile.grade && (!profile.classId || !profile.classTeacherUid || !profile.classTeacherName)) {
+      if (profile.role === "student" && !profile.classId) {
         const match = await findOpenClass({ school: profile.school || "", educationLevel: profile.educationLevel, grade: profile.grade, rombel: profile.rombel || "1" });
         if (match) {
-          const classJoinedAt = profile.classJoinedAt || new Date().toISOString();
-          profile = { ...profile, classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt };
-          if (db) await setDoc(doc(db, "users", credential.user.uid), { classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt }, { merge: true });
+          profile = { ...profile, classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt: new Date().toISOString() };
+          if (db) await setDoc(doc(db, "users", credential.user.uid), { classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt: profile.classJoinedAt }, { merge: true });
         }
       }
       const session = makeSession(profile, credential.user.uid);
@@ -127,7 +126,7 @@ export async function registerAccount(form){
           try { await deleteUser(credential.user); } catch {}
           return {
             ok:false,
-            message:"Kelas yang dipilih belum dibuka oleh Guru. Pilih kelas lain atau hubungi Guru/Admin."
+            message:"Kelas tidak ditemukan di Firestore. Pastikan kelas Guru tersimpan di Firebase dan status pendaftarannya terbuka."
           };
         }
 
@@ -148,7 +147,18 @@ export async function registerAccount(form){
           createdAt: now,
         };
 
+        // Simpan profil siswa sebagai langkah wajib. Jika Firestore menolak,
+        // jangan membuat sesi lokal seolah-olah siswa sudah terdaftar.
         await setDoc(doc(db, "users", credential.user.uid), profile, { merge:true });
+
+        const savedProfileSnap = await getDoc(doc(db, "users", credential.user.uid));
+        if (!savedProfileSnap.exists()) {
+          throw new Error("Profil siswa tidak berhasil dibuat di Firestore.");
+        }
+        const savedProfile = savedProfileSnap.data();
+        if (savedProfile.classId !== classMatch.id || savedProfile.classTeacherUid !== classMatch.teacherUid) {
+          throw new Error("Profil siswa tersimpan, tetapi hubungan kelas dan Guru tidak sesuai.");
+        }
 
         // Inisialisasi Student Model agar akun langsung siap dipakai
         // oleh alur ITS/adaptive learning.
@@ -163,7 +173,12 @@ export async function registerAccount(form){
           updatedAt: now,
         }, { merge:true });
 
-        const session = makeSession(profile, credential.user.uid);
+        const modelSnap = await getDoc(doc(db, "studentModels_v2", credential.user.uid));
+        if (!modelSnap.exists()) {
+          throw new Error("Student Model tidak berhasil dibuat di Firestore.");
+        }
+
+        const session = makeSession(savedProfile, credential.user.uid);
         localStorage.setItem(KEY, JSON.stringify(session));
         return { ok:true, session };
       }
@@ -219,7 +234,8 @@ export async function registerAccount(form){
         } catch {}
       }
       if (error?.code !== "auth/operation-not-allowed") {
-        return { ok:false, message: firebaseMessage(error) };
+        const custom = error?.message && !String(error.message).startsWith("Firebase") ? error.message : "";
+        return { ok:false, message: custom || firebaseMessage(error) };
       }
     }
   }
