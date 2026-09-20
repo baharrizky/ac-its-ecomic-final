@@ -19,11 +19,18 @@ export default function TeacherDashboard({
  const [result,setResult]=useState(null);
  const [loading,setLoading]=useState(false);
 
- const scopedStudents=students.filter(
+ const studentList=Array.isArray(students)?students:[];
+ const classList=Array.isArray(teacherClasses)?teacherClasses:[];
+ const modelList=Array.isArray(models)?models:[];
+ const attemptList=Array.isArray(attempts)?attempts:[];
+ const eventList=Array.isArray(events)?events:[];
+ const comics=Array.isArray(state?.comics)?state.comics:[];
+
+ const scopedStudents=studentList.filter(
    s =>
      !session?.uid ||
      s.classTeacherUid===session.uid ||
-     teacherClasses.some(c=>c.id===s.classId)
+     classList.some(c=>c.id===s.classId)
  );
 
  useEffect(()=>{
@@ -31,15 +38,15 @@ export default function TeacherDashboard({
  },[session?.uid]);
 
  const byUid=useMemo(
-   ()=>new Map(models.map(m=>[m.uid,m])),
-   [models]
+   ()=>new Map(modelList.map(m=>[m.uid,m])),
+   [modelList]
  );
 
- const published=state.comics.filter(
+ const published=comics.filter(
    c=>c.status==="Published"
  ).length;
 
- const episodes=state.comics.reduce(
+ const episodes=comics.reduce(
    (n,c)=>n+(c.episodes?.length||0),
    0
  );
@@ -60,12 +67,12 @@ export default function TeacherDashboard({
      {};
 
    const studentAttempts=
-     attempts
+     attemptList
        .filter(a=>a.uid===selectedStudent.uid)
        .slice(0,25);
 
    const studentEvents=
-     events
+     eventList
        .filter(e=>e.uid===selectedStudent.uid)
        .slice(0,25);
 
@@ -122,7 +129,7 @@ export default function TeacherDashboard({
          </div>
          <div>
            <span>Total E-Comic</span>
-           <strong>{state.comics.length}</strong>
+           <strong>{comics.length}</strong>
          </div>
        </div>
 
@@ -357,7 +364,7 @@ export default function TeacherDashboard({
 
          <div className="comic-mini-grid">
 
-           {state.comics.slice(0,2).map(c=>(
+           {comics.slice(0,2).map(c=>(
              <div
                className="ac-comic-mini"
                key={c.id}

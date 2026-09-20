@@ -3,8 +3,10 @@ import { BookOpen, MessageCircle, PencilLine, Trophy, Flame, Star, ArrowRight, P
 import Badge from "../../components/common/Badge";
 
 export default function StudentDashboard({state,navigate,session,concepts=[]}) {
-  const weakest = Object.entries(state.studentModel.concepts).sort((a,b)=>a[1].mastery-b[1].mastery)[0];
-  const published = state.comics.filter(c=>c.status==="Published" && (!session?.educationLevel || c.educationLevel===session.educationLevel) && (!session?.grade || String(c.grade)===String(session.grade)) && (!session?.school || !c.school || c.school===session.school));
+  const conceptEntries = Object.entries(state.studentModel?.concepts || {});
+  const learnedConcepts = conceptEntries.filter(([,p]) => Number(p?.attempts || 0) > 0 || Number(p?.exposureCount || 0) > 0);
+  const weakest = learnedConcepts.sort((a,b)=>Number(a[1]?.mastery||0)-Number(b[1]?.mastery||0))[0];
+  const published = (Array.isArray(state.comics) ? state.comics : []).filter(c=>c.status==="Published" && (!session?.educationLevel || c.educationLevel===session.educationLevel) && (!session?.grade || String(c.grade)===String(session.grade)) && (!session?.school || !c.school || c.school===session.school));
   const completedPanels = Object.keys(state.studentModel.completedPanels||{}).length;
   const totalPanels = published.reduce((sum,c)=>sum+(c.episodes||[]).reduce((n,e)=>n+(e.panels?.length||0),0),0);
   const completedComics = (state.studentModel.completedComics||[]).length;
@@ -59,11 +61,11 @@ export default function StudentDashboard({state,navigate,session,concepts=[]}) {
           <div className="section-head"><div><h2>Rekomendasi</h2><span>Dari perkembangan belajarmu</span></div></div>
           <div className="recommend-card">
             <div className="recommend-icon"><PencilLine size={20}/></div>
-            <span>Konsep yang perlu diperkuat</span>
-            <strong>{weakest?.[0]} · {concepts.find(c=>c.id===weakest?.[0])?.name || weakest?.[0]}</strong>
+            <span>Penguatan dari materi yang sudah dipelajari</span>
+            <strong>{weakest ? `${weakest[0]} · ${concepts.find(c=>c.id===weakest[0])?.name || weakest[0]}` : "Belum ada konsep yang dapat direkomendasikan"}</strong>
             <div className="progress-label"><span>Mastery</span><b>{Math.round((weakest?.[1]?.mastery||0)*100)}%</b></div>
             <div className="progress"><span style={{width:`${(weakest?.[1]?.mastery||0)*100}%`}}/></div>
-            <button className="primary-btn small full" onClick={()=>navigate("practice")}>Mulai Latihan</button>
+            <button className="primary-btn small full" disabled={!weakest} onClick={()=>navigate("practice")}>Mulai Latihan</button>
           </div>
         </aside>
       </div>

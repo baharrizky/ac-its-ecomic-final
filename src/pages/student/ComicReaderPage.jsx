@@ -23,7 +23,7 @@ export default function ComicReaderPage({comic,studentModel,questions=[],navigat
  const currentGlobalPanel=useMemo(()=>comic?comic.episodes.slice(0,ei).reduce((sum,ep)=>sum+(ep.panels?.length||0),0)+pi+1:0,[comic,ei,pi]);
  const overallProgress=totalPanels?Math.round(currentGlobalPanel/totalPanels*100):0;
  const conceptId=panel?.conceptIds?.[0]; const conceptName=concepts[conceptId]?.name||conceptId||"Konsep pembelajaran"; const mastery=conceptId?studentModel?.concepts?.[conceptId]?.mastery:null;
- const relatedQuestions=useMemo(()=>{const exact=questions.filter(q=>q.comicId===comic?.id && q.panelId===panel?.id);if(exact.length)return exact.slice(0,4);return questions.filter(q=>q.comicId===comic?.id && (!conceptId||q.conceptId===conceptId)).slice(0,4);},[questions,conceptId,comic?.id,panel?.id]);
+ const relatedQuestions=useMemo(()=>{const qs=Array.isArray(questions)?questions:[];const exact=qs.filter(q=>q.comicId===comic?.id && q.panelId===panel?.id);if(exact.length)return exact.slice(0,4);return qs.filter(q=>q.comicId===comic?.id && (!conceptId||q.conceptId===conceptId)).slice(0,4);},[questions,conceptId,comic?.id,panel?.id]);
  const activeQuestion=relatedQuestions[0];
  useEffect(()=>{
    const now=Date.now();
@@ -41,7 +41,8 @@ export default function ComicReaderPage({comic,studentModel,questions=[],navigat
  useEffect(()=>{const el=tutorMessagesRef.current;if(el)requestAnimationFrame(()=>{el.scrollTop=el.scrollHeight;});},[tutorMessages?.length,tutorBusy,infoTab]);
  useEffect(()=>{if(!focusMode)return;const old=document.body.style.overflow;document.body.style.overflow="hidden";const key=e=>{if(e.key==="Escape")setFocusMode(false);if(e.key==="ArrowRight")next();if(e.key==="ArrowLeft")prev();};window.addEventListener("keydown",key);return()=>{document.body.style.overflow=old;window.removeEventListener("keydown",key)};},[focusMode,ei,pi,comic]);
  if(!comic)return <div className="empty">Comic tidak ditemukan.</div>;
- if(!episode||!panel)return <div><button className="btn" onClick={()=>navigate("comic-library")}>← Kembali</button><div className="card empty" style={{marginTop:14}}>Belum ada episode yang memiliki panel.</div></div>;
+ if(!episode)return <div><button className="btn" onClick={()=>navigate("comic-library")}>← Kembali</button><div className="card empty" style={{marginTop:14}}>Belum ada episode pada E-Comic ini.</div></div>;
+ if(!panel)return <div><button className="btn" onClick={()=>navigate("comic-library")}>← Kembali</button><div className="card" style={{marginTop:14}}><div className="page-kicker">Episode {ei+1}</div><h2 style={{margin:"6px 0"}}>{episode.title||`Episode ${ei+1}`}</h2><p className="subtle">{episode.description||comic.description||"Belum ada deskripsi episode."}</p><div className="reader-episode-list" style={{padding:0,marginTop:14}}><div className="reader-section-title"><PanelRight size={16}/> Pilih Episode</div>{(comic.episodes||[]).map((item,index)=><button key={item.id||index} className={index===ei?"active":""} onClick={()=>jumpToEpisode(index)}><span>Episode {index+1}</span><strong>{item.title||`Episode ${index+1}`}</strong><small>{item.panels?.length||0} panel</small></button>)}</div></div></div>;
  function next(){if(pi<episode.panels.length-1)setPi(v=>v+1);else if(ei<comic.episodes.length-1){setEi(v=>v+1);setPi(0)}}
  function prev(){if(pi>0)setPi(v=>v-1);else if(ei>0){const e=ei-1;setEi(e);setPi(Math.max(0,(comic.episodes[e].panels?.length||1)-1))}}
  function jumpToEpisode(i){setEi(i);setPi(0)}
