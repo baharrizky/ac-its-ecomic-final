@@ -25,10 +25,26 @@ function normalizeLevel(value = "") {
 
 function normalizeGradeRombel(grade = "", rombel = "") {
   let g = String(grade || "").trim().toUpperCase();
-  let r = String(rombel || "").trim();
-  const combined = g || r;
-  const m = combined.match(/^(VII|VIII|IX|X|XI|XII)[\s._-]*(\d+)$/i);
-  if (m) { g = m[1].toUpperCase(); r = m[2]; }
+  let r = String(rombel || "").trim().toUpperCase();
+
+  // Support both UI formats used by the app:
+  //   Guru   -> grade="X", rombel="1"
+  //   Siswa  -> grade="X", rombel="X 1"
+  // Also accept a combined value such as "X-1" or "XI.2".
+  const prefixedRombel = r.match(/^(VII|VIII|IX|X|XI|XII)[\s._-]*(\d+)$/i);
+  if (prefixedRombel) {
+    const prefixedGrade = prefixedRombel[1].toUpperCase();
+    if (!g || g === prefixedGrade) g = prefixedGrade;
+    r = prefixedRombel[2];
+  } else {
+    const combined = `${g} ${r}`.trim();
+    const combinedMatch = combined.match(/^(VII|VIII|IX|X|XI|XII)[\s._-]*(\d+)$/i);
+    if (combinedMatch) {
+      g = combinedMatch[1].toUpperCase();
+      r = combinedMatch[2];
+    }
+  }
+
   return { grade: g, rombel: r || "1" };
 }
 
