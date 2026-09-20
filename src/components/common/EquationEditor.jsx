@@ -15,7 +15,10 @@ export default function EquationEditor({ value = "", onChange, label = "Persamaa
     if (!ref.current) return;
     if (!value.trim()) { ref.current.innerHTML = '<span class="subtle">Pratinjau persamaan akan muncul di sini.</span>'; setError(""); return; }
     try {
-      ref.current.innerHTML = katex.renderToString(value, { throwOnError: true, displayMode: true });
+      const lines = String(value).split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+      ref.current.innerHTML = lines.length > 1
+        ? lines.map(line=>`<div class="equation-line">${katex.renderToString(line,{throwOnError:true,displayMode:true})}</div>`).join("")
+        : katex.renderToString(value, { throwOnError: true, displayMode: true });
       setError("");
     } catch (e) {
       ref.current.textContent = "Persamaan belum valid: " + (e?.message || "periksa sintaks LaTeX");
@@ -24,8 +27,19 @@ export default function EquationEditor({ value = "", onChange, label = "Persamaa
   }, [value]);
 
   function insert(snippet) {
-    const next = value ? `${value} ${snippet}` : snippet;
-    onChange(next);
+    const current = String(value || "");
+    if (snippet === "x^2" || snippet === "x^n") {
+      const exponent = snippet === "x^2" ? "2" : "n";
+      const match = current.match(/(\\?[A-Za-z0-9]+|\\\{[^}]+\\\})$/);
+      if (match) {
+        const token = match[0];
+        const base = token.replace(/^\\\{|\\\}$/g, "");
+        onChange(current.slice(0, -token.length) + `${base}^${exponent}`);
+        return;
+      }
+    }
+    const separator = current && !current.endsWith("\n") ? " " : "";
+    onChange(current ? `${current}${separator}${snippet}` : snippet);
   }
 
   return <div className="equation-editor">

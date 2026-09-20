@@ -19,18 +19,17 @@ export default function TeacherDashboard({
  const [result,setResult]=useState(null);
  const [loading,setLoading]=useState(false);
 
- const studentList=Array.isArray(students)?students:[];
- const classList=Array.isArray(teacherClasses)?teacherClasses:[];
- const modelList=Array.isArray(models)?models:[];
- const attemptList=Array.isArray(attempts)?attempts:[];
- const eventList=Array.isArray(events)?events:[];
- const comics=Array.isArray(state?.comics)?state.comics:[];
+ const safeStudents=Array.isArray(students)?students:[];
+ const safeModels=Array.isArray(models)?models:[];
+ const safeAttempts=Array.isArray(attempts)?attempts:[];
+ const safeEvents=Array.isArray(events)?events:[];
+ const safeComics=Array.isArray(state?.comics)?state.comics:[];
 
- const scopedStudents=studentList.filter(
+ const scopedStudents=safeStudents.filter(
    s =>
      !session?.uid ||
      s.classTeacherUid===session.uid ||
-     classList.some(c=>c.id===s.classId)
+     teacherClasses.some(c=>c.id===s.classId)
  );
 
  useEffect(()=>{
@@ -38,15 +37,15 @@ export default function TeacherDashboard({
  },[session?.uid]);
 
  const byUid=useMemo(
-   ()=>new Map(modelList.map(m=>[m.uid,m])),
-   [modelList]
+   ()=>new Map(safeModels.map(m=>[m.uid,m])),
+   [models]
  );
 
- const published=comics.filter(
+ const published=safeComics.filter(
    c=>c.status==="Published"
  ).length;
 
- const episodes=comics.reduce(
+ const episodes=safeComics.reduce(
    (n,c)=>n+(c.episodes?.length||0),
    0
  );
@@ -67,12 +66,12 @@ export default function TeacherDashboard({
      {};
 
    const studentAttempts=
-     attemptList
+     safeAttempts
        .filter(a=>a.uid===selectedStudent.uid)
        .slice(0,25);
 
    const studentEvents=
-     eventList
+     safeEvents
        .filter(e=>e.uid===selectedStudent.uid)
        .slice(0,25);
 
@@ -129,7 +128,7 @@ export default function TeacherDashboard({
          </div>
          <div>
            <span>Total E-Comic</span>
-           <strong>{comics.length}</strong>
+           <strong>{state.comics.length}</strong>
          </div>
        </div>
 
@@ -364,7 +363,7 @@ export default function TeacherDashboard({
 
          <div className="comic-mini-grid">
 
-           {comics.slice(0,2).map(c=>(
+           {state.comics.slice(0,2).map(c=>(
              <div
                className="ac-comic-mini"
                key={c.id}

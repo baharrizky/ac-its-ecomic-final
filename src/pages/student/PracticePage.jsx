@@ -40,7 +40,7 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
   async function choose(i){
     if(diagnosis?.correct) return;
     setSelected(i);
-    const d=await onAnswer?.(q,i,"practice",0,hintsUsed);
+    const d=await onAnswer?.(q,i,"practice",0,{hintsUsed});
     setDiagnosis(d||null);
     setAiReply("");
   }
@@ -57,12 +57,12 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
     setAiReply("");
   }
   async function askAI(){
-    if(!diagnosis?.correct || !onAIExplain) return;
+    if(!diagnosis || !onAIExplain) return;
     setLoadingAI(true);
     try {
       const r=await onAIExplain({
-        message:`Siswa sudah mencoba dan menjawab benar. Jelaskan mengapa jawabannya benar, hubungkan dengan konsep E-Comic, lalu berikan satu pertanyaan reflektif singkat tanpa membocorkan soal berikutnya.`,
-        context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName,hintsUsed}
+        message: diagnosis?.correct ? `Jelaskan mengapa jawaban siswa benar dan hubungkan langkah penyelesaiannya dengan konsep ${conceptName}. Jangan membuat soal baru.` : `Bantu siswa memahami kesalahan pada soal ini tanpa langsung memberikan jawaban akhir. Jelaskan konsep dan langkah berpikir yang perlu diperhatikan.`,
+        context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName}
       });
       setAiReply(r?.reply || "Belum ada penjelasan AI.");
     } finally { setLoadingAI(false); }
@@ -73,13 +73,8 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
       const nextIndex=published.findIndex(item=>item.id===rec.questionId);
       if(nextIndex>=0){setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);setIndex(nextIndex);return;}
     }
-    const currentLevel=Number(q?.level??q?.difficulty??1);
-    const targetLevel=Math.max(1,Math.min(5,currentLevel + (hintsUsed===0 ? 1 : hintsUsed<=2 ? 0 : -1)));
-    const sameConcept=published.filter(item=>item.conceptId===q.conceptId && item.id!==q.id);
-    const candidates=(sameConcept.length?sameConcept:published.filter(item=>item.id!==q.id)).slice().sort((a,b)=>Math.abs(Number(a.level??a.difficulty??1)-targetLevel)-Math.abs(Number(b.level??b.difficulty??1)-targetLevel));
-    const fallback=candidates[0];
-    setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);
-    if(fallback){setIndex(published.findIndex(item=>item.id===fallback.id));}else if(index>=published.length-1){setIndex(0);}else{setIndex(v=>v+1);}
+    if(index>=published.length-1){setIndex(0);setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);return;}
+    setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);setIndex(v=>v+1);
   }
 
   const progress=Math.round(((index+1)/published.length)*100);
@@ -107,13 +102,12 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {hintLevel<3&&<button className="btn" onClick={useHint}>💡 Hint {hintLevel+1}</button>}
               <button className="btn" onClick={retry}>↻ Coba lagi</button>
-              
               {hintLevel>=3&&<button className="btn-primary" onClick={next}>Lanjut →</button>}
             </div>
             {hintLevel>0&&<div className="ai-feedback"><strong>Hint {hintLevel}</strong><p>{hints[Math.min(hintLevel-1,hints.length-1)]}</p></div>}
             {aiReply&&<div className="ai-feedback"><strong>AI Tutor</strong><AIResponse text={aiReply}/></div>}
           </div>}
-          {diagnosis.correct&&<div style={{marginTop:12}}><div className="ai-feedback"><strong>Rekomendasi berikutnya</strong><p>{diagnosis.recommendation?.reason || (hintsUsed===0 ? "Naik satu tingkat karena kamu menjawab tanpa hint." : hintsUsed<=2 ? "Tetap di tingkat yang sama untuk memastikan pemahaman." : "Turunkan sedikit tingkat kesulitan untuk memperkuat konsep sebelum naik lagi.")}</p><div className="subtle">Target level: {diagnosis.recommendation?.targetLevel || Math.max(1,Math.min(5,Number(q?.level??q?.difficulty??1)+(hintsUsed===0?1:hintsUsed<=2?0:-1)))}</div></div><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><button className="btn-primary" onClick={next}>Soal Berikutnya →</button>{!aiReply&&<button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"AI sedang menjelaskan…":"Tanya Tutor"}</button>}</div></div>}
+          {diagnosis.correct&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><button className="btn-primary" onClick={next}>Soal Berikutnya →</button><button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"AI sedang menjelaskan…":"Tanya Tutor"}</button></div>}
         </div>}
       </section>
       <aside className="side-stack">
