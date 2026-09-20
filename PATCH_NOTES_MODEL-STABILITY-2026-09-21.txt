@@ -1,0 +1,18 @@
+AC-ITS E-COMIC — MODEL STABILITY PATCH
+Date: 2026-09-21
+
+CHANGES
+1. Core Gemini model pinned to stable gemini-2.5-flash.
+2. AI fallback pinned to stable gemini-2.5-flash-lite.
+3. Tutor multimodal path uses gemini-2.5-flash; panel vision already used gemini-2.5-flash.
+4. AI timeout errors now trigger the stable fallback path instead of waiting without fallback.
+5. AI-generated next-question request uses a bounded timeout so the practice UI does not remain stuck indefinitely.
+6. Practice no longer silently advances to a bank question after a successful answer when AI generation fails. It shows an explicit retry state instead.
+7. Added the missing “Tanya Tutor AI” action after 3 failed attempts in PracticePage.
+8. Removed duplicate/unreachable response statements in api/tutor.js.
+
+MODEL NOTE
+Google's current Gemini API documentation lists Gemini 2.5 Flash as a stable model with no announced shutdown date and describes it as a low-latency, high-volume reasoning model. Gemini 2.5 Flash-Lite is also stable and is positioned as the faster/budget multimodal fallback.
+
+DEPLOYMENT
+The code intentionally pins the production model so an old Vercel GEMINI_MODEL=gemini-3.8-flash variable cannot silently move this build back to the previous model. GEMINI_API_KEY remains required on the server.

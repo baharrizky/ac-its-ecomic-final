@@ -35,6 +35,7 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
   const [nextQuestion,setNextQuestion]=useState(null);
   const [nextQuestionLoading,setNextQuestionLoading]=useState(false);
   const [nextQuestionReason,setNextQuestionReason]=useState("");
+  const [nextQuestionError,setNextQuestionError]=useState("");
   const [generatedQueue,setGeneratedQueue]=useState([]);
   const q=generatedQueue.length ? generatedQueue[generatedQueue.length-1] : published[index];
   const conceptName=concepts.find(c=>c.id===q?.conceptId)?.name||q?.conceptId||"Konsep";
@@ -51,9 +52,10 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
     if(d?.correct){
       setNextQuestion(null);
       setNextQuestionReason("");
+      setNextQuestionError("");
       setNextQuestionLoading(true);
-      // Generate the next item from AI after a correct answer. It runs in the
-      // background so the student can immediately see the feedback.
+      // The next practice item must come from AI. Do not silently fall back
+      // to the teacher's question bank after a successful answer.
       Promise.resolve(onGenerateNextQuestion?.({
         question:q,
         studentModel,
@@ -66,8 +68,13 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
         if(result?.question) {
           setNextQuestion(result.question);
           setNextQuestionReason(result.reason||"Soal berikut dibuat AI berdasarkan perkembanganmu.");
+          setNextQuestionError("");
+        } else {
+          setNextQuestionError(result?.reason || "AI belum berhasil membuat soal berikutnya. Tekan coba lagi.");
         }
-      }).catch(()=>{}).finally(()=>setNextQuestionLoading(false));
+      }).catch((error)=>{
+        setNextQuestionError(error?.message || "AI belum berhasil membuat soal berikutnya. Tekan coba lagi.");
+      }).finally(()=>setNextQuestionLoading(false));
     } else {
       setFailedAttempts(v=>v+1);
     }
@@ -93,19 +100,45 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
     try {
       const r=await onAIExplain({
         message:`Aku sudah mencoba soal ini ${failedAttempts} kali dan masih salah. Tolong jadi tutor: bantu aku memahami letak kesalahanku dari jawaban terakhir, hubungkan dengan materi/komik yang relevan, lalu berikan satu pertanyaan penuntun. Jangan langsung memberikan jawaban akhir.`,
-        context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:selected==null?null:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName,hintsUsed,failedAttempts,practiceMode:true}
+        context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:selected==null?null:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName,hintsUsed,failedAttempts,practiceMode:true,comicTitle:q.comicTitle||"",episodeTitle:q.episodeTitle||"",panelTitle:q.panelTitle||"",narration:q.narration||"",dialogue:q.dialogue||"",characters:Array.isArray(q.characters)?q.characters:[],storyContext:q.storyContext||"",imageUrl:q.imageUrl||q.panelImage||""}
       });
       setAiReply(r?.reply || "Coba kita bedah langkahmu dari awal. Bagian mana yang menurutmu paling membingungkan?");
     } finally { setLoadingAI(false); }
   }
+  function retryGenerate(){
+    if(nextQuestionLoading || !q || !onGenerateNextQuestion) return;
+    setNextQuestionError("");
+    setNextQuestionLoading(true);
+    Promise.resolve(onGenerateNextQuestion({
+      question:q,
+      studentModel,
+      concepts,
+      publishedQuestions:published,
+      hintsUsed,
+      failedAttempts,
+      recentAttempts:[{questionId:q.id,conceptId:q.conceptId,correct:true,hintsUsed,level:Number(q.level??q.difficulty??1)}]
+    })).then(result=>{
+      if(result?.question){
+        setNextQuestion(result.question);
+        setNextQuestionReason(result.reason||"Soal berikut dibuat AI berdasarkan perkembanganmu.");
+        setNextQuestionError("");
+      } else setNextQuestionError(result?.reason||"AI belum berhasil membuat soal berikutnya. Coba lagi.");
+    }).catch(error=>setNextQuestionError(error?.message||"AI belum berhasil membuat soal berikutnya. Coba lagi."))
+      .finally(()=>setNextQuestionLoading(false));
+  }
+
   function next(){
     if(nextQuestion){
       const nq=nextQuestion;
       setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);setFailedAttempts(0);
-      setNextQuestion(null);setNextQuestionReason("");
+      setNextQuestion(null);setNextQuestionReason("");setNextQuestionError("");
       // Keep AI-generated questions local to this practice session.
       setIndex(0);
       setGeneratedQueue(prev=>[...prev,nq]);
+      return;
+    }
+    if(diagnosis?.correct && !nextQuestion){
+      retryGenerate();
       return;
     }
     const rec=diagnosis?.recommendation;
@@ -149,10 +182,11 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
               <button className="btn" onClick={retry}>↻ Coba lagi</button>
               
               {hintLevel>=3&&<button className="btn-primary" onClick={next}>Lanjut →</button>}
+              {failedAttempts>=3&&<button className="btn-primary" onClick={askAI} disabled={loadingAI}>{loadingAI?"Tutor sedang berpikir…":"💬 Tanya Tutor AI"}</button>}
             </div>
             {hintLevel>0&&<div className="ai-feedback"><strong>Hint {hintLevel}</strong><p>{aiReply || hints[Math.min(hintLevel-1,hints.length-1)]}</p></div>}
           </div>}
-          {diagnosis.correct&&<div style={{marginTop:12}}><div className="ai-feedback"><strong>Soal berikut dibuat AI</strong><p>{nextQuestionReason || "AI sedang menyiapkan soal yang sesuai dengan kemampuanmu…"}</p>{nextQuestion&&<div className="subtle">Level berikut: {nextQuestion.level||"-"} · Konsep: {nextQuestion.conceptId||q.conceptId}</div>}</div><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><button className="btn-primary" onClick={next} disabled={nextQuestionLoading}>{nextQuestionLoading?"AI sedang membuat soal…":"Soal Berikutnya →"}</button></div></div>}
+          {diagnosis.correct&&<div style={{marginTop:12}}><div className="ai-feedback"><strong>Soal berikut dibuat AI</strong><p>{nextQuestionError || nextQuestionReason || "AI sedang menyiapkan soal yang sesuai dengan kemampuanmu…"}</p>{nextQuestion&&<div className="subtle">Level berikut: {nextQuestion.level||"-"} · Konsep: {nextQuestion.conceptId||q.conceptId}</div>}</div><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><button className="btn-primary" onClick={next} disabled={nextQuestionLoading}>{nextQuestionLoading?"AI sedang membuat soal…":nextQuestion?"Soal Berikutnya →":"Coba AI Lagi"}</button></div></div>}
         </div>}
       </section>
       <aside className="side-stack">

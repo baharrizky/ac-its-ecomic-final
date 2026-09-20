@@ -1,7 +1,7 @@
 const DEFAULT_PROVIDER = (process.env.AI_PROVIDER || "gemini").toLowerCase();
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
-const DEFAULT_TIMEOUT_MS = Math.max(8000, Number(process.env.AI_TIMEOUT_MS || 30000));
+const DEFAULT_MODEL = "gemini-2.5-flash";
+const FALLBACK_MODEL = "gemini-2.5-flash-lite";
+const DEFAULT_TIMEOUT_MS = Math.max(7000, Number(process.env.AI_TIMEOUT_MS || 12000));
 const DEFAULT_RETRIES = Math.min(3, Math.max(1, Number(process.env.AI_MAX_RETRIES || 2)));
 
 function json(res, status, payload) {
@@ -367,7 +367,8 @@ async function callAI(prompt, options = {}) {
   } catch (error) {
     // Keep Tutor available when the primary model is temporarily unavailable or rate-limited.
     const providerStatus = Number(error?.status);
-    const canFallback = providerStatus === 400 || providerStatus === 404 || providerStatus === 429 || [500,502,503,504].includes(providerStatus);
+    const timedOut = error?.code === "AI_TIMEOUT" || error?.name === "AbortError";
+    const canFallback = timedOut || providerStatus === 400 || providerStatus === 404 || providerStatus === 429 || [500,502,503,504].includes(providerStatus);
     if (canFallback && DEFAULT_MODEL !== FALLBACK_MODEL) {
       return await callGemini(prompt, { ...options, model:FALLBACK_MODEL, thinkingLevel:undefined });
     }
@@ -410,7 +411,7 @@ export default async function handler(req, res) {
     }
 
     if (mode === "generate_next") {
-      const response = await callAI(buildGenerateNextQuestionPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 520, timeoutMs: 11000, maxRetries: 0 });
+      const response = await callAI(buildGenerateNextQuestionPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 520, timeoutMs: 6500, maxRetries: 0 });
       const parsed = parseJsonObject(response.text);
       if (!parsed?.question || !Array.isArray(parsed.question.options) || parsed.question.options.length !== 4) {
         throw Object.assign(new Error("AI next question mengembalikan format tidak valid."), { code: "AI_INVALID_QUESTION" });
@@ -461,7 +462,7 @@ export default async function handler(req, res) {
     // Tutor intentionally uses a separate, conservative model path. This
     // keeps multimodal tutoring independent from the heavier correction /
     // recommendation flows and avoids Gemini 3 thinking/output edge cases.
-    const tutorModel = process.env.GEMINI_TUTOR_MODEL || "gemini-2.5-flash";
+    const tutorModel = "gemini-2.5-flash";
     const tutorPrompt = buildTutorPrompt(message, tutorContext, history);
     let response;
     try {
@@ -488,8 +489,8 @@ export default async function handler(req, res) {
           imageUrl: "",
           imageExpected: false,
           maxOutputTokens: 800,
-          thinkingLevel: /^gemini-3\./i.test(DEFAULT_MODEL) ? "low" : undefined,
-          timeoutMs: 12000,
+          thinkingLevel: "low",
+          timeoutMs: 7000,
           maxRetries: 0
         });
       } catch (secondaryError) {
@@ -510,7 +511,6 @@ export default async function handler(req, res) {
         }
       }
     }
-    return json(res, 200, { reply: response.text, ai: true, meta: { ...response.meta, tutorModel } });
     return json(res, 200, { reply: response.text, ai: true, meta: { ...response.meta, tutorModel } });
   } catch (error) {
     console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });
