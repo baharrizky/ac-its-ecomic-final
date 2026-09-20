@@ -87,11 +87,18 @@ export async function createTeacherClass(teacher, data = {}) {
   if (duplicate) return duplicate;
   const id = `class-${teacher.uid}-${Date.now()}`;
   const item = { id, teacherUid: teacher.uid, teacherName: teacher.name || "Guru", school, educationLevel: level, grade: normalized.grade, rombel: normalized.rombel, name: `${normalized.grade} ${normalized.rombel}`, active: true, enrollmentOpen: true, createdAt: new Date().toISOString() };
-  localUpsert("classes", item);
+  // Firebase is the source of truth when enabled. Do NOT write to localStorage
+  // before the cloud write succeeds, otherwise the teacher UI can show a class
+  // that never reached Firestore while students (on another browser/device)
+  // correctly cannot find it.
   if (await ready()) {
-    try { await setDoc(doc(db, CLASSES, id), item, { merge: true }); }
-    catch (e) { throw new Error(`Kelas gagal disimpan ke Firebase: ${e?.code || e?.message || "permission/network error"}`); }
+    try {
+      await setDoc(doc(db, CLASSES, id), item, { merge: true });
+    } catch (e) {
+      throw new Error(`Kelas gagal disimpan ke Firebase: ${e?.code || e?.message || "permission/network error"}`);
+    }
   }
+  localUpsert("classes", item);
   return item;
 }
 
@@ -102,9 +109,7 @@ export async function listClassesForTeacher(teacherUid) {
     try {
       const snap = await getDocs(query(collection(db, CLASSES), where("teacherUid", "==", teacherUid)));
       const cloud = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      const byId = new Map(cloud.map(x => [x.id, x]));
-      local.forEach(x => { if (!byId.has(x.id)) byId.set(x.id, x); });
-      return [...byId.values()].sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel)));
+      return cloud.sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel)));
     } catch (e) { console.warn("class list failed", e); }
   }
   return local.sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel)));
@@ -116,30 +121,38 @@ export async function findOpenClass({ school, educationLevel, grade, rombel }) {
   const schoolKey = normalizeSchool(school);
   const matches = rows => rows.find(x => {
     const xr = normalizeGradeRombel(x.grade, x.rombel);
-    return x.active !== false && x.enrollmentOpen !== false && normalizeSchool(x.school) === schoolKey && normalizeLevel(x.educationLevel) === level && xr.grade === normalized.grade && xr.rombel === normalized.rombel;
+    return x.active === true && x.enrollmentOpen === true
+      && normalizeSchool(x.school) === schoolKey
+      && normalizeLevel(x.educationLevel) === level
+      && xr.grade === normalized.grade
+      && xr.rombel === normalized.rombel;
   }) || null;
+
   if (await ready()) {
     try {
-      // Query exact school first so Firestore security rules can prove that
-      // every returned class is eligible for student registration.
-      const q = query(collection(db, CLASSES), where("school", "==", String(school || "").trim()), where("educationLevel", "==", level), where("grade", "==", normalized.grade), where("rombel", "==", normalized.rombel));
+      // Query only classes that are actually open/active. This makes the
+      // Firestore rule provable for student reads and avoids a false
+      // "class not open" caused by a denied broad query.
+      const q = query(
+        collection(db, CLASSES),
+        where("educationLevel", "==", level),
+        where("grade", "==", normalized.grade),
+        where("rombel", "==", normalized.rombel),
+        where("active", "==", true),
+        where("enrollmentOpen", "==", true)
+      );
       const snap = await getDocs(q);
-      const exact = matches(snap.docs.map(d => ({ id:d.id, ...d.data() })));
-      if (exact) return exact;
-      // Support the common alias "SMA Negeri" vs "SMAN" without opening a
-      // broad class query that would violate Firestore security constraints.
-      const aliases = [];
-      if (/^sman\b/i.test(String(school || ""))) aliases.push(String(school).replace(/^SMAN/i, "SMA Negeri"));
-      if (/^sma\s+negeri\b/i.test(String(school || ""))) aliases.push(String(school).replace(/^SMA\s+Negeri/i, "SMAN"));
-      for (const alias of aliases) {
-        if (alias.trim() === String(school || "").trim()) continue;
-        const q2 = query(collection(db, CLASSES), where("school", "==", alias.trim()), where("educationLevel", "==", level), where("grade", "==", normalized.grade), where("rombel", "==", normalized.rombel));
-        const snap2 = await getDocs(q2);
-        const found = matches(snap2.docs.map(d => ({ id:d.id, ...d.data() })));
-        if (found) return found;
-      }
-    } catch (e) { console.warn("open class lookup failed", e); }
+      const found = matches(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+      if (found) return found;
+    } catch (e) {
+      console.warn("open class lookup failed", e);
+    }
+    // If the cloud query fails, do not fall back to a teacher's localStorage
+    // copy during real Firebase registration. That copy is browser-local and
+    // can make the teacher see a class that students cannot access.
+    return null;
   }
+
   return matches(localClasses());
 }
 
