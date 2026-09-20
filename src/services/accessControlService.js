@@ -85,3 +85,23 @@ export async function listAllClasses() {
   if (await ready()) { try { const snap = await getDocs(collection(db, CLASSES)); return snap.docs.map(d => ({ id:d.id, ...d.data() })); } catch (e) { console.warn(e); } }
   return localRead("classes", []);
 }
+
+export async function listAllTeachers() {
+  if (await ready()) {
+    try {
+      const snap = await getDocs(query(collection(db, "users"), where("role", "==", "teacher")));
+      return snap.docs.map(d => ({ id: d.id, uid: d.id, ...d.data() }));
+    } catch (e) { console.warn(e); }
+  }
+  return localRead("teachers", []);
+}
+
+export async function listAllStudents() {
+  if (await ready()) {
+    try {
+      const snap = await getDocs(query(collection(db, "users"), where("role", "==", "student")));
+      return snap.docs.map(d => ({ id: d.id, uid: d.id, ...d.data() }));
+    } catch (e) { console.warn(e); }
+  }
+  return localRead("students", []);
+}
