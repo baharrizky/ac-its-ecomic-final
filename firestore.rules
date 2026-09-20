@@ -1,124 +1,837 @@
 rules_version = '2';
+
 service cloud.firestore {
+
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
-    function isAdmin() { return signedIn() && me().data.role == 'admin'; }
-    function isTeacher() { return signedIn() && me().data.role == 'teacher'; }
-    function isStudent() { return signedIn() && me().data.role == 'student'; }
-    function myTeacher() { return signedIn() ? me().data.classTeacherUid : null; }
-    function myClass() { return signedIn() ? me().data.classId : null; }
+
+    // =====================================================
+    // HELPER FUNCTIONS
+    // =====================================================
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function me() {
+      return get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      );
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && me().data.role == 'admin';
+    }
+
+    function isTeacher() {
+      return signedIn()
+        && me().data.role == 'teacher';
+    }
+
+    function isStudent() {
+      return signedIn()
+        && me().data.role == 'student';
+    }
+
+    function myTeacher() {
+      return signedIn()
+        ? me().data.classTeacherUid
+        : null;
+    }
+
+    function myClass() {
+      return signedIn()
+        ? me().data.classId
+        : null;
+    }
+
+
+    // =====================================================
+    // USERS
+    // =====================================================
 
     match /users/{uid} {
+
       allow create: if
         signedIn()
         && request.auth.uid == uid
         && (
+
           (
             request.resource.data.role == 'student'
             && request.resource.data.classId != null
             && request.resource.data.classTeacherUid != null
-            && exists(/databases/$(database)/documents/classes_v3/$(request.resource.data.classId))
-            && get(/databases/$(database)/documents/classes_v3/$(request.resource.data.classId)).data.active == true
-            && get(/databases/$(database)/documents/classes_v3/$(request.resource.data.classId)).data.enrollmentOpen == true
-            && get(/databases/$(database)/documents/classes_v3/$(request.resource.data.classId)).data.teacherUid == request.resource.data.classTeacherUid
+
+            && exists(
+              /databases/$(database)/documents/classes_v3/$(request.resource.data.classId)
+            )
+
+            && get(
+              /databases/$(database)/documents/classes_v3/$(request.resource.data.classId)
+            ).data.active == true
+
+            && get(
+              /databases/$(database)/documents/classes_v3/$(request.resource.data.classId)
+            ).data.enrollmentOpen == true
+
+            && get(
+              /databases/$(database)/documents/classes_v3/$(request.resource.data.classId)
+            ).data.teacherUid
+              == request.resource.data.classTeacherUid
           )
+
           ||
+
           (
             request.resource.data.role == 'teacher'
             && request.resource.data.teacherInviteCodeId != null
-            && get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.active == true
-            && get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.usedCount < get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.maxUses
+
+            && get(
+              /databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)
+            ).data.active == true
+
+            && get(
+              /databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)
+            ).data.usedCount
+              <
+              get(
+                /databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)
+              ).data.maxUses
           )
         );
-      allow read: if isAdmin() || request.auth.uid == uid || (isTeacher() && resource.data.classTeacherUid == request.auth.uid);
-      allow update: if isAdmin() || (request.auth.uid == uid && request.resource.data.role == resource.data.role && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','subtitle','educationLevel','grade','rombel','school','classId','classTeacherUid','classTeacherName','classJoinedAt'])) || (isTeacher() && resource.data.role == 'student' && resource.data.classTeacherUid == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['classId','classTeacherUid','classTeacherName','classJoinedAt']));
+
+
+      allow read: if
+        isAdmin()
+        || request.auth.uid == uid
+        || (
+          isTeacher()
+          && resource.data.classTeacherUid == request.auth.uid
+        );
+
+
+      allow update: if
+        isAdmin()
+
+        ||
+
+        (
+          request.auth.uid == uid
+          && request.resource.data.role == resource.data.role
+          && request.resource.data
+            .diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'name',
+              'subtitle',
+              'educationLevel',
+              'grade',
+              'rombel',
+              'school',
+              'classId',
+              'classTeacherUid',
+              'classTeacherName',
+              'classJoinedAt'
+            ])
+        )
+
+        ||
+
+        (
+          isTeacher()
+          && resource.data.role == 'student'
+          && resource.data.classTeacherUid == request.auth.uid
+          && request.resource.data
+            .diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'classId',
+              'classTeacherUid',
+              'classTeacherName',
+              'classJoinedAt'
+            ])
+        );
+
+
       allow delete: if isAdmin();
     }
 
+
+    // =====================================================
+    // TEACHER REGISTRATION CODES
+    // =====================================================
+
     match /teacherRegistrationCodes_v3/{code} {
+
       allow create, delete: if isAdmin();
-      allow get: if isAdmin() || (signedIn() && resource.data.active == true && resource.data.usedCount < resource.data.maxUses);
+
+      allow get: if
+        isAdmin()
+        ||
+        (
+          signedIn()
+          && resource.data.active == true
+          && resource.data.usedCount < resource.data.maxUses
+        );
+
       allow list: if isAdmin();
-      allow update: if isAdmin() || (signedIn() && isTeacher() && resource.data.active == true && resource.data.usedCount < resource.data.maxUses && request.resource.data.usedCount == resource.data.usedCount + 1 && request.resource.data.usedBy[resource.data.usedCount] == request.auth.uid);
+
+      allow update: if
+        isAdmin()
+
+        ||
+
+        (
+          signedIn()
+          && isTeacher()
+          && resource.data.active == true
+          && resource.data.usedCount < resource.data.maxUses
+
+          && request.resource.data.usedCount
+            == resource.data.usedCount + 1
+
+          && request.resource.data.usedBy[
+            resource.data.usedCount
+          ]
+            == request.auth.uid
+        );
     }
+
+
+    // =====================================================
+    // CLASSES
+    // =====================================================
 
     match /classes_v3/{classId} {
-      allow create: if isTeacher() && request.resource.data.teacherUid == request.auth.uid;
+
+      allow create:
+        if isTeacher()
+        && request.resource.data.teacherUid
+          == request.auth.uid;
+
+
       allow read: if
         isAdmin()
-        || (isTeacher() && resource.data.teacherUid == request.auth.uid)
-        || (signedIn() && resource.data.enrollmentOpen == true && resource.data.active == true)
-        || (signedIn() && !exists(/databases/$(database)/documents/users/$(request.auth.uid)));
-      allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid);
+
+        ||
+
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        )
+
+        ||
+
+        (
+          signedIn()
+          && resource.data.enrollmentOpen == true
+          && resource.data.active == true
+        )
+
+        ||
+
+        (
+          signedIn()
+          && !exists(
+            /databases/$(database)/documents/users/$(request.auth.uid)
+          )
+        );
+
+
+      allow update, delete:
+        if isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        );
     }
+
+
+    // =====================================================
+    // E-COMIC
+    // =====================================================
 
     match /ecomic_comics_v2/{comicId} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.ownerTeacherUid == request.auth.uid) || (isStudent() && resource.data.status == 'Published' && resource.data.assignedClassIds != null && myClass() in resource.data.assignedClassIds);
-      allow create: if isTeacher() && request.resource.data.ownerTeacherUid == request.auth.uid;
-      allow update, delete: if isAdmin() || (isTeacher() && resource.data.ownerTeacherUid == request.auth.uid);
+
+      /*
+       * ---------------------------------------------------
+       * READ
+       * ---------------------------------------------------
+       *
+       * ADMIN:
+       *   dapat membaca semua.
+       *
+       * GURU:
+       *   dapat membaca E-Comic miliknya.
+       *
+       *   Mendukung:
+       *   - ownerTeacherUid
+       *   - createdBy
+       *   - classTeacherUid
+       *   - teacherUid
+       *
+       * SISWA:
+       *   hanya Published + assignedClassIds.
+       */
+
+      allow read: if
+
+        isAdmin()
+
+        ||
+
+        (
+          isTeacher()
+          && (
+            resource.data.ownerTeacherUid
+              == request.auth.uid
+
+            ||
+
+            resource.data.createdBy
+              == request.auth.uid
+
+            ||
+
+            resource.data.classTeacherUid
+              == request.auth.uid
+
+            ||
+
+            resource.data.teacherUid
+              == request.auth.uid
+          )
+        )
+
+        ||
+
+        (
+          isStudent()
+          && resource.data.status == 'Published'
+          && resource.data.assignedClassIds != null
+          && myClass() in resource.data.assignedClassIds
+        );
+
+
+      /*
+       * ---------------------------------------------------
+       * CREATE
+       * ---------------------------------------------------
+       */
+
+      allow create: if
+
+        isAdmin()
+
+        ||
+
+        (
+          isTeacher()
+          && (
+            request.resource.data.ownerTeacherUid
+              == request.auth.uid
+
+            ||
+
+            request.resource.data.createdBy
+              == request.auth.uid
+
+            ||
+
+            request.resource.data.classTeacherUid
+              == request.auth.uid
+
+            ||
+
+            request.resource.data.teacherUid
+              == request.auth.uid
+          )
+        );
+
+
+      /*
+       * ---------------------------------------------------
+       * UPDATE
+       * ---------------------------------------------------
+       */
+
+      allow update: if
+
+        isAdmin()
+
+        ||
+
+        (
+          isTeacher()
+          && (
+            resource.data.ownerTeacherUid
+              == request.auth.uid
+
+            ||
+
+            resource.data.createdBy
+              == request.auth.uid
+
+            ||
+
+            resource.data.classTeacherUid
+              == request.auth.uid
+
+            ||
+
+            resource.data.teacherUid
+              == request.auth.uid
+          )
+        );
+
+
+      /*
+       * ---------------------------------------------------
+       * DELETE
+       * ---------------------------------------------------
+       */
+
+      allow delete: if
+
+        isAdmin()
+
+        ||
+
+        (
+          isTeacher()
+          && (
+            resource.data.ownerTeacherUid
+              == request.auth.uid
+
+            ||
+
+            resource.data.createdBy
+              == request.auth.uid
+
+            ||
+
+            resource.data.classTeacherUid
+              == request.auth.uid
+
+            ||
+
+            resource.data.teacherUid
+              == request.auth.uid
+          )
+        );
     }
+
+
+    // =====================================================
+    // E-COMIC QUESTIONS
+    // =====================================================
 
     match /ecomic_questions_v2/{questionId} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.ownerTeacherUid == request.auth.uid) || (isStudent() && resource.data.status != 'Draft' && resource.data.assignedClassIds != null && myClass() in resource.data.assignedClassIds);
-      allow create: if isTeacher() && request.resource.data.ownerTeacherUid == request.auth.uid;
-      allow update, delete: if isAdmin() || (isTeacher() && resource.data.ownerTeacherUid == request.auth.uid);
+
+      allow read: if
+        isAdmin()
+
+        ||
+
+        (
+          isTeacher()
+          && resource.data.ownerTeacherUid
+            == request.auth.uid
+        )
+
+        ||
+
+        (
+          isStudent()
+          && resource.data.status != 'Draft'
+          && resource.data.assignedClassIds != null
+          && myClass()
+            in resource.data.assignedClassIds
+        );
+
+
+      allow create:
+        if isTeacher()
+        && request.resource.data.ownerTeacherUid
+          == request.auth.uid;
+
+
+      allow update, delete:
+        if isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.ownerTeacherUid
+            == request.auth.uid
+        );
     }
+
+
+    // =====================================================
+    // STUDENT MODELS
+    // =====================================================
 
     match /studentModels_v2/{uid} {
-      allow read: if isAdmin() || request.auth.uid == uid || (isTeacher() && get(/databases/$(database)/documents/users/$(uid)).data.classTeacherUid == request.auth.uid);
-      allow create, update: if isAdmin() || request.auth.uid == uid;
-      allow delete: if isAdmin() || request.auth.uid == uid;
+
+      allow read: if
+        isAdmin()
+        ||
+        request.auth.uid == uid
+        ||
+        (
+          isTeacher()
+          &&
+          get(
+            /databases/$(database)/documents/users/$(uid)
+          ).data.classTeacherUid
+            == request.auth.uid
+        );
+
+
+      allow create, update:
+        if isAdmin()
+        || request.auth.uid == uid;
+
+
+      allow delete:
+        if isAdmin()
+        || request.auth.uid == uid;
     }
+
+
+    // =====================================================
+    // ATTEMPTS
+    // =====================================================
 
     match /attempts_v2/{id} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid) || (isStudent() && resource.data.uid == request.auth.uid);
-      allow create: if isStudent() && request.resource.data.uid == request.auth.uid && request.resource.data.teacherUid == me().data.classTeacherUid;
-      allow update: if isAdmin() || (isStudent() && resource.data.uid == request.auth.uid);
-      allow delete: if isAdmin() || (isStudent() && resource.data.uid == request.auth.uid);
+
+      allow read: if
+        isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        )
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
+
+
+      allow create: if
+        isStudent()
+        && request.resource.data.uid
+          == request.auth.uid
+        && request.resource.data.teacherUid
+          == me().data.classTeacherUid;
+
+
+      allow update: if
+        isAdmin()
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
+
+
+      allow delete: if
+        isAdmin()
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
     }
+
+
+    // =====================================================
+    // LEARNING EVENTS
+    // =====================================================
 
     match /learningEvents_v2/{id} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid) || (isStudent() && resource.data.uid == request.auth.uid);
-      allow create: if isStudent() && request.resource.data.uid == request.auth.uid && request.resource.data.teacherUid == me().data.classTeacherUid;
-      allow update: if isAdmin() || (isStudent() && resource.data.uid == request.auth.uid);
-      allow delete: if isAdmin() || (isStudent() && resource.data.uid == request.auth.uid);
+
+      allow read: if
+        isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        )
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
+
+
+      allow create: if
+        isStudent()
+        && request.resource.data.uid
+          == request.auth.uid
+        && request.resource.data.teacherUid
+          == me().data.classTeacherUid;
+
+
+      allow update: if
+        isAdmin()
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
+
+
+      allow delete: if
+        isAdmin()
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
     }
+
+
+    // =====================================================
+    // ATTENDANCE
+    // =====================================================
 
     match /attendance_v2/{id} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid) || (isStudent() && resource.data.uid == request.auth.uid);
-      allow create, update: if isStudent() && request.resource.data.uid == request.auth.uid && request.resource.data.teacherUid == me().data.classTeacherUid;
-      allow delete: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid) || (isStudent() && resource.data.uid == request.auth.uid);
+
+      allow read: if
+        isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        )
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
+
+
+      allow create, update: if
+        isStudent()
+        && request.resource.data.uid
+          == request.auth.uid
+        && request.resource.data.teacherUid
+          == me().data.classTeacherUid;
+
+
+      allow delete: if
+        isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        )
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
     }
+
+
+    // =====================================================
+    // EXAM RESULTS
+    // =====================================================
 
     match /examResults_v2/{id} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid) || (isStudent() && resource.data.uid == request.auth.uid);
-      allow create, update: if isStudent() && request.resource.data.uid == request.auth.uid && request.resource.data.teacherUid == me().data.classTeacherUid;
-      allow delete: if isAdmin() || (isStudent() && resource.data.uid == request.auth.uid);
+
+      allow read: if
+        isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        )
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
+
+
+      allow create, update: if
+        isStudent()
+        && request.resource.data.uid
+          == request.auth.uid
+        && request.resource.data.teacherUid
+          == me().data.classTeacherUid;
+
+
+      allow delete: if
+        isAdmin()
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
     }
+
+
+    // =====================================================
+    // REFLECTIONS
+    // =====================================================
 
     match /reflections_v2/{id} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid) || (isStudent() && resource.data.uid == request.auth.uid);
-      allow create, update: if isStudent() && request.resource.data.uid == request.auth.uid && request.resource.data.teacherUid == me().data.classTeacherUid;
-      allow delete: if isAdmin() || (isStudent() && resource.data.uid == request.auth.uid);
+
+      allow read: if
+        isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        )
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
+
+
+      allow create, update: if
+        isStudent()
+        && request.resource.data.uid
+          == request.auth.uid
+        && request.resource.data.teacherUid
+          == me().data.classTeacherUid;
+
+
+      allow delete: if
+        isAdmin()
+        ||
+        (
+          isStudent()
+          && resource.data.uid
+            == request.auth.uid
+        );
     }
+
+
+    // =====================================================
+    // KNOWLEDGE BASE
+    // =====================================================
 
     match /knowledgeBase_v2/{id} {
-      allow read: if signedIn();
-      allow create, update, delete: if isAdmin() || isTeacher();
+
+      allow read:
+        if signedIn();
+
+      allow create, update, delete:
+        if isAdmin()
+        || isTeacher();
     }
+
+
+    // =====================================================
+    // E-COMIC MEDIA
+    // =====================================================
 
     match /ecomic_media/{id} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.ownerTeacherUid == request.auth.uid) || (isStudent() && resource.data.assignedClassIds != null && myClass() in resource.data.assignedClassIds);
-      allow create: if isTeacher() && request.resource.data.ownerTeacherUid == request.auth.uid;
-      allow update, delete: if isAdmin() || (isTeacher() && resource.data.ownerTeacherUid == request.auth.uid);
+
+      allow read: if
+        isAdmin()
+
+        ||
+
+        (
+          isTeacher()
+          && resource.data.ownerTeacherUid
+            == request.auth.uid
+        )
+
+        ||
+
+        (
+          isStudent()
+          && resource.data.assignedClassIds != null
+          && myClass()
+            in resource.data.assignedClassIds
+        );
+
+
+      allow create:
+        if isTeacher()
+        && request.resource.data.ownerTeacherUid
+          == request.auth.uid;
+
+
+      allow update, delete:
+        if isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.ownerTeacherUid
+            == request.auth.uid
+        );
     }
 
+
+    // =====================================================
+    // CLASS ACCESS CODES
+    // =====================================================
+
     match /classAccessCodes_v2/{id} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid);
-      allow create: if isAdmin() || (isTeacher() && request.resource.data.teacherUid == request.auth.uid);
-      allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherUid == request.auth.uid);
+
+      allow read: if
+        isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        );
+
+
+      allow create:
+        if isAdmin()
+        ||
+        (
+          isTeacher()
+          && request.resource.data.teacherUid
+            == request.auth.uid
+        );
+
+
+      allow update, delete:
+        if isAdmin()
+        ||
+        (
+          isTeacher()
+          && resource.data.teacherUid
+            == request.auth.uid
+        );
     }
+
+
+    // =====================================================
+    // DEFAULT DENY
+    // =====================================================
 
     match /{document=**} {
       allow read, write: if false;

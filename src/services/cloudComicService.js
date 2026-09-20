@@ -146,41 +146,58 @@ function mergePanel(local = {}, cloud = {}) {
       ...cloud,
       ...local,
     },
-    local.order || cloud.order || 0
+    local.order ||
+      cloud.order ||
+      0
   );
 }
 
 function mergeEpisode(local = {}, cloud = {}) {
-  const localPanels = Array.isArray(local.panels)
-    ? local.panels
-    : [];
+  const localPanels =
+    Array.isArray(local.panels)
+      ? local.panels
+      : [];
 
-  const cloudPanels = Array.isArray(cloud.panels)
-    ? cloud.panels
-    : [];
+  const cloudPanels =
+    Array.isArray(cloud.panels)
+      ? cloud.panels
+      : [];
 
-  const cloudById = new Map(
-    cloudPanels.map((p) => [p.id, p])
-  );
+  const cloudById =
+    new Map(
+      cloudPanels.map(
+        (p) => [p.id, p]
+      )
+    );
 
-  const localById = new Map(
-    localPanels.map((p) => [p.id, p])
-  );
+  const localById =
+    new Map(
+      localPanels.map(
+        (p) => [p.id, p]
+      )
+    );
 
   const ids = [];
 
-  [...localPanels, ...cloudPanels].forEach((p) => {
-    if (p?.id && !ids.includes(p.id)) {
+  [
+    ...localPanels,
+    ...cloudPanels,
+  ].forEach((p) => {
+    if (
+      p?.id &&
+      !ids.includes(p.id)
+    ) {
       ids.push(p.id);
     }
   });
 
-  const panels = ids.map((id) =>
-    mergePanel(
-      localById.get(id) || {},
-      cloudById.get(id) || {}
-    )
-  );
+  const panels =
+    ids.map((id) =>
+      mergePanel(
+        localById.get(id) || {},
+        cloudById.get(id) || {}
+      )
+    );
 
   return normalizeEpisode(
     {
@@ -188,35 +205,55 @@ function mergeEpisode(local = {}, cloud = {}) {
       ...local,
       panels,
     },
-    local.order || cloud.order || 0
+    local.order ||
+      cloud.order ||
+      0
   );
 }
 
 export function mergeComic(local, cloud) {
-  if (!local) return normalizeComic(cloud);
+  if (!local) {
+    return normalizeComic(cloud);
+  }
 
-  if (!cloud) return normalizeComic(local);
+  if (!cloud) {
+    return normalizeComic(local);
+  }
 
-  const localEpisodes = Array.isArray(local.episodes)
-    ? local.episodes
-    : [];
+  const localEpisodes =
+    Array.isArray(local.episodes)
+      ? local.episodes
+      : [];
 
-  const cloudEpisodes = Array.isArray(cloud.episodes)
-    ? cloud.episodes
-    : [];
+  const cloudEpisodes =
+    Array.isArray(cloud.episodes)
+      ? cloud.episodes
+      : [];
 
-  const cloudById = new Map(
-    cloudEpisodes.map((ep) => [ep.id, ep])
-  );
+  const cloudById =
+    new Map(
+      cloudEpisodes.map(
+        (ep) => [ep.id, ep]
+      )
+    );
 
-  const localById = new Map(
-    localEpisodes.map((ep) => [ep.id, ep])
-  );
+  const localById =
+    new Map(
+      localEpisodes.map(
+        (ep) => [ep.id, ep]
+      )
+    );
 
   const ids = [];
 
-  [...localEpisodes, ...cloudEpisodes].forEach((ep) => {
-    if (ep?.id && !ids.includes(ep.id)) {
+  [
+    ...localEpisodes,
+    ...cloudEpisodes,
+  ].forEach((ep) => {
+    if (
+      ep?.id &&
+      !ids.includes(ep.id)
+    ) {
       ids.push(ep.id);
     }
   });
@@ -238,18 +275,30 @@ export function mergeComicCollections(
   localComics = [],
   cloudComics = []
 ) {
-  const localById = new Map(
-    localComics.map((c) => [c.id, c])
-  );
+  const localById =
+    new Map(
+      localComics.map(
+        (c) => [c.id, c]
+      )
+    );
 
-  const cloudById = new Map(
-    cloudComics.map((c) => [c.id, c])
-  );
+  const cloudById =
+    new Map(
+      cloudComics.map(
+        (c) => [c.id, c]
+      )
+    );
 
   const ids = [];
 
-  [...localComics, ...cloudComics].forEach((c) => {
-    if (c?.id && !ids.includes(c.id)) {
+  [
+    ...localComics,
+    ...cloudComics,
+  ].forEach((c) => {
+    if (
+      c?.id &&
+      !ids.includes(c.id)
+    ) {
       ids.push(c.id);
     }
   });
@@ -263,31 +312,37 @@ export function mergeComicCollections(
 }
 
 /* =========================================================
-   FIRESTORE RESULT NORMALIZER
+   HELPER
 ========================================================= */
 
-function uniqueNormalized(docs = []) {
-  const byId = new Map();
+function normalizeDocs(docs = []) {
+  const map = new Map();
 
   docs.forEach((d) => {
-    const comic = normalizeComic({
-      id: d.id,
-      ...d.data(),
-    });
+    const comic =
+      normalizeComic({
+        id: d.id,
+        ...d.data(),
+      });
 
     if (comic.id) {
-      byId.set(comic.id, comic);
+      map.set(
+        comic.id,
+        comic
+      );
     }
   });
 
-  return [...byId.values()];
+  return [...map.values()];
 }
 
 /* =========================================================
    LOAD COMICS
 ========================================================= */
 
-export async function loadCloudComics(session = null) {
+export async function loadCloudComics(
+  session = null
+) {
   if (
     !firebaseEnabled ||
     !db ||
@@ -297,68 +352,39 @@ export async function loadCloudComics(session = null) {
   }
 
   try {
-    const comicsRef = collection(
-      db,
-      COLLECTION
-    );
+    const comicsRef =
+      collection(
+        db,
+        COLLECTION
+      );
 
-    /* -----------------------------------------------------
-       STUDENT
-       Hanya Published + sesuai classId
-    ----------------------------------------------------- */
+    /*
+     * =====================================================
+     * GURU
+     * =====================================================
+     *
+     * Prioritas:
+     * 1. ownerTeacherUid
+     * 2. createdBy
+     * 3. classTeacherUid
+     *
+     * Ini supaya E-Comic lama tetap terbaca.
+     */
 
-    if (session?.role === "student") {
-      if (!session.classId) {
+    if (
+      session?.role === "teacher"
+    ) {
+      if (!session.uid) {
         return [];
       }
 
-      const source = query(
-        comicsRef,
-
-        where(
-          "status",
-          "==",
-          "Published"
-        ),
-
-        where(
-          "assignedClassIds",
-          "array-contains",
-          session.classId
-        )
-      );
-
-      const snap = await getDocs(source);
-
-      return uniqueNormalized(
-        snap.docs
-      );
-    }
-
-    /* -----------------------------------------------------
-       TEACHER
-       Draft + Published
-
-       Mendukung tiga format ownership:
-       - ownerTeacherUid
-       - createdBy
-       - teacherUid
-    ----------------------------------------------------- */
-
-    if (session?.role === "teacher") {
-      const uid = session.uid;
-
-      if (!uid) {
-        return [];
-      }
-
-      const sources = [
+      const queries = [
         query(
           comicsRef,
           where(
             "ownerTeacherUid",
             "==",
-            uid
+            session.uid
           )
         ),
 
@@ -367,43 +393,87 @@ export async function loadCloudComics(session = null) {
           where(
             "createdBy",
             "==",
-            uid
+            session.uid
           )
         ),
 
         query(
           comicsRef,
           where(
-            "teacherUid",
+            "classTeacherUid",
             "==",
-            uid
+            session.uid
           )
         ),
       ];
 
-      const snapshots = await Promise.all(
-        sources.map((source) =>
-          getDocs(source)
-        )
-      );
+      const snapshots =
+        await Promise.all(
+          queries.map(
+            (q) => getDocs(q)
+          )
+        );
 
-      return uniqueNormalized(
+      return normalizeDocs(
         snapshots.flatMap(
           (snap) => snap.docs
         )
       );
     }
 
-    /* -----------------------------------------------------
-       ADMIN / FALLBACK
-       Semua comic
-    ----------------------------------------------------- */
+    /*
+     * =====================================================
+     * SISWA
+     * =====================================================
+     *
+     * Hanya E-Comic Published
+     * yang diberikan ke classId siswa.
+     */
 
-    const snap = await getDocs(
-      comicsRef
-    );
+    if (
+      session?.role === "student"
+    ) {
+      if (!session.classId) {
+        return [];
+      }
 
-    return uniqueNormalized(
+      const source =
+        query(
+          comicsRef,
+
+          where(
+            "status",
+            "==",
+            "Published"
+          ),
+
+          where(
+            "assignedClassIds",
+            "array-contains",
+            session.classId
+          )
+        );
+
+      const snap =
+        await getDocs(source);
+
+      return normalizeDocs(
+        snap.docs
+      );
+    }
+
+    /*
+     * =====================================================
+     * ADMIN / FALLBACK
+     * =====================================================
+     */
+
+    const snap =
+      await getDocs(
+        comicsRef
+      );
+
+    return normalizeDocs(
       snap.docs
     );
 
@@ -421,7 +491,9 @@ export async function loadCloudComics(session = null) {
    SAVE COMIC
 ========================================================= */
 
-export async function saveCloudComic(comic) {
+export async function saveCloudComic(
+  comic
+) {
   if (
     !firebaseEnabled ||
     !db ||
@@ -443,6 +515,7 @@ export async function saveCloudComic(comic) {
       ),
       {
         ...normalized,
+
         syncedAt:
           new Date().toISOString(),
       },
@@ -491,37 +564,42 @@ export async function subscribeCloudComics(
       COLLECTION
     );
 
-  /* -----------------------------------------------------
-     STUDENT
-    ----------------------------------------------------- */
+  /*
+   * =====================================================
+   * SISWA
+   * =====================================================
+   */
 
-  if (session?.role === "student") {
+  if (
+    session?.role === "student"
+  ) {
     if (!session.classId) {
       return () => {};
     }
 
-    const source = query(
-      comicsRef,
+    const source =
+      query(
+        comicsRef,
 
-      where(
-        "status",
-        "==",
-        "Published"
-      ),
+        where(
+          "status",
+          "==",
+          "Published"
+        ),
 
-      where(
-        "assignedClassIds",
-        "array-contains",
-        session.classId
-      )
-    );
+        where(
+          "assignedClassIds",
+          "array-contains",
+          session.classId
+        )
+      );
 
     return onSnapshot(
       source,
 
       (snap) => {
         onChange(
-          uniqueNormalized(
+          normalizeDocs(
             snap.docs
           )
         );
@@ -536,10 +614,11 @@ export async function subscribeCloudComics(
     );
   }
 
-  /* -----------------------------------------------------
-     TEACHER
-     Dengarkan semua ownership field
-    ----------------------------------------------------- */
+  /*
+   * =====================================================
+   * GURU
+   * =====================================================
+   */
 
   if (
     session?.role !== "teacher" ||
@@ -548,7 +627,7 @@ export async function subscribeCloudComics(
     return () => {};
   }
 
-  const sources = [
+  const queries = [
     query(
       comicsRef,
       where(
@@ -570,7 +649,7 @@ export async function subscribeCloudComics(
     query(
       comicsRef,
       where(
-        "teacherUid",
+        "classTeacherUid",
         "==",
         session.uid
       )
@@ -578,23 +657,22 @@ export async function subscribeCloudComics(
   ];
 
   const buckets =
-    sources.map(() => []);
+    queries.map(() => []);
 
   let active = true;
 
   const emit = () => {
     if (!active) return;
 
-    const docs =
-      buckets.flat();
-
     onChange(
-      uniqueNormalized(docs)
+      normalizeDocs(
+        buckets.flat()
+      )
     );
   };
 
-  const unsubs =
-    sources.map(
+  const unsubscribers =
+    queries.map(
       (source, index) =>
         onSnapshot(
           source,
@@ -618,7 +696,7 @@ export async function subscribeCloudComics(
   return () => {
     active = false;
 
-    unsubs.forEach(
+    unsubscribers.forEach(
       (unsubscribe) =>
         unsubscribe?.()
     );
