@@ -1,107 +1,19 @@
-# AC-ITS E-Comic — UAT v12
+PATCH V9 — CLASS MANAGEMENT + ROMBEL DISPLAY FIX
 
-Versi ini disiapkan untuk **uji coba seluruh lini utama** platform E-Comic adaptive learning.
+Replace these files:
+- src/services/accessControlService.js
+- src/services/authService.js
+- src/pages/teacher/TeacherDataPages.jsx
+- src/pages/student/ProfilePage.jsx
+- src/utils/classLabel.js
 
-## Fitur yang sudah dibuat fungsional
+Changes:
+1. Prevents legacy duplicate class labels such as "X X 1"; canonical display/storage is "X 1".
+2. Fixes Student Profile so it does not render grade twice.
+3. Class Management now supports Aktifkan/Nonaktifkan, Buka/Tutup pendaftaran, and Hapus.
+4. Class status changes persist to Firestore.
+5. Teacher student lookup uses a single Firestore equality query when scoped by teacher, avoiding unnecessary composite-index failures that can make Dashboard Guru show 0 students.
+6. Existing legacy rombel values are canonicalized when the teacher class list is loaded.
 
-### Siswa
-- Registrasi: nama, email, jenjang, sekolah, kelas, rombel.
-- Login dan sapaan menggunakan nama akun pendaftar.
-- Library E-Comic berdasarkan status Published + jenjang + kelas + sekolah.
-- Comic Reader: panel, gambar, narasi, dialog, persamaan KaTeX, tokoh, materi, Tutor, kuis cepat, progress, episode, mode baca.
-- Aktivitas membaca disimpan ke student model dan memberi XP.
-- Latihan adaptif berbasis mastery.
-- Diagnosis jawaban + AI explanation.
-- Ujian bertimer + hasil + pencatatan attempt.
-- Progress mastery konsep.
-- Ranking kelas.
-- Badge dinamis.
-- Refleksi tersimpan.
-- Presensi tersimpan.
-- Profil + bergabung/pindah kelas dengan Kode Akses.
-
-### Guru
-- Dashboard konten dan jumlah siswa nyata.
-- Kelola E-Comic: metadata, cover, episode, panel, gambar, narasi, dialog, persamaan, tokoh, concept mapping, Publish.
-- Preview E-Comic dari workspace guru.
-- Bank Soal: CRUD, jenjang/kelas, persamaan, konsep, level, status, tag miskonsepsi.
-- Knowledge Base CRUD untuk konteks AI.
-- Nilai Siswa dengan filter jenjang/sekolah/kelas/rombel.
-- Progress per Soal dari attempt siswa.
-- Analitik mastery, distribusi kemampuan, tren attempt, miskonsepsi aktif, konsep prioritas.
-- Peringkat kelas.
-- Jawaban & waktu ujian.
-- Refleksi siswa.
-- Kode Akses kelas.
-- Presensi siswa.
-
-## Data & sinkronisasi
-
-- Firestore dipakai sebagai sumber data utama saat Firebase aktif.
-- Local storage dipakai sebagai fallback development.
-- Student model disimpan pada `studentModels/{uid}`.
-- Attempt pada `attempts`.
-- Learning event pada `learningEvents`.
-- Refleksi pada `reflections`.
-- Presensi pada `attendance`.
-- Hasil ujian pada `examResults`.
-- Kode kelas pada `classAccessCodes`.
-- Knowledge base pada `knowledgeBase`.
-- Media development disimpan melalui `ecomic_media` dengan fallback IndexedDB; struktur media dapat dipindahkan ke Firebase Storage tanpa mengubah struktur E-Comic.
-
-## Paket Uji Coba
-
-Dashboard Guru memiliki tombol **Buat Paket Uji Coba**. Tombol tersebut membuat contoh E-Comic Published + episode/panel + persamaan + tokoh + bank soal sehingga seluruh alur dapat diuji tanpa menunggu konten final.
-
-## Firebase
-
-Pastikan:
-- Authentication → Email/Password aktif.
-- Firestore aktif.
-- Environment variables Firebase sudah benar pada `.env` / Vercel.
-- Firestore Rules yang sekarang masih ditujukan untuk **UAT authenticated users**, bukan production hardening.
-
-Firebase Storage/Blaze belum menjadi syarat untuk UAT media versi ini.
-
-## Menjalankan lokal
-
-```bash
-npm install
-npm run dev
-```
-
-Build:
-
-```bash
-npm run build
-```
-
-## Checklist
-
-Lihat `docs/UAT-CHECKLIST.md` untuk skenario pengujian end-to-end.
-
-## AI UAT — Gemini
-
-AI provider utama UAT adalah Gemini melalui `/api/tutor`. Lihat `docs/AI-SETUP.md` dan `README-AI-UAT.md`.
-
-
-## v16.4 UX
-- Diagnostic AI endpoint/test UI removed from student-facing production flow.
-- Operational AI details remain server-side.
-- Student-facing copy uses learning language instead of backend terminology.
-- Tutor, practice, and reader layouts keep normal page scrolling on desktop Windows and mobile.
-
-## Media storage fix (V20)
-New uploads use Firebase Storage as the primary media backend. Firestore is not used to store image Base64 for new uploads. The returned Firebase Storage download URL is stored directly in the comic/panel data, so MediaImage and Gemini can consume a normal HTTPS image URL.
-
-Required Firebase Storage rules for the current authenticated prototype:
-```
-rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /ecomic-media/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-  }
-}
-```
+The existing X 1 class should be kept for testing.
+After deployment, hard-refresh the browser (Ctrl+Shift+R).

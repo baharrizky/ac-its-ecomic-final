@@ -1,5 +1,5 @@
 import { canonicalRombel } from "../utils/classLabel";
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
 import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 
 const CLASSES = "classes_v3";
@@ -61,6 +61,44 @@ export async function createTeacherClass(teacher, data = {}) {
   localUpsert("classes", item);
   if (await ready()) { await setDoc(doc(db, CLASSES, id), item, { merge: true }); }
   return item;
+}
+
+export async function updateTeacherClass(id, patch = {}) {
+  if (!id) throw new Error("ID kelas tidak ditemukan.");
+  const current = localRead("classes", []).find(x => x.id === id) || {};
+  const next = { ...current, ...patch };
+  if (Object.prototype.hasOwnProperty.call(patch, "rombel")) {
+    next.rombel = canonicalRombel(next.grade || "X", patch.rombel);
+    next.name = next.rombel;
+  }
+  localUpsert("classes", next);
+  if (await ready()) {
+    const cloudPatch = { ...patch };
+    if (Object.prototype.hasOwnProperty.call(patch, "rombel")) {
+      cloudPatch.rombel = next.rombel;
+      cloudPatch.name = next.name;
+    }
+    await updateDoc(doc(db, CLASSES, id), cloudPatch);
+  }
+  return next;
+}
+
+export async function setTeacherClassActive(id, active) {
+  const value = Boolean(active);
+  return updateTeacherClass(id, { active: value, enrollmentOpen: value });
+}
+
+export async function setTeacherClassEnrollment(id, enrollmentOpen) {
+  const value = Boolean(enrollmentOpen);
+  return updateTeacherClass(id, { enrollmentOpen: value });
+}
+
+export async function deleteTeacherClass(id) {
+  if (!id) return false;
+  if (await ready()) await deleteDoc(doc(db, CLASSES, id));
+  const rows = localRead("classes", []);
+  localWrite("classes", rows.filter(x => x.id !== id));
+  return true;
 }
 
 export async function listClassesForTeacher(teacherUid) {
