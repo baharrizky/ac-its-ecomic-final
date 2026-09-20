@@ -182,14 +182,40 @@ export default function App(){
     const questions=Array.isArray(state.questions)?state.questions:[];
     return questions.filter(q=>q.status!=="Draft" && (q.assessmentType||"practice")==="practice" && (!q.educationLevel||q.educationLevel===session?.educationLevel) && (!q.grade||q.grade===session?.grade));
   },[state.questions,session?.educationLevel,session?.grade]);
- const leaderboard=useMemo(()=>registeredStudents.filter(s=>!session?.school||!s.school||s.school===session.school).filter(s=>!session?.grade||s.grade===session.grade).filter(s=>!session?.rombel||s.rombel===session.rombel),[registeredStudents,session?.school,session?.grade,session?.rombel]);
- const teacherVisibleStudents=useMemo(()=>{if(session?.role!=="teacher")return [];const ids=new Set(teacherClasses.map(c=>c.id));return registeredStudents.filter(s=>s.classTeacherUid===session.uid || (s.classId&&ids.has(s.classId)));},[registeredStudents,teacherClasses,session?.uid,session?.role]);
+ const leaderboard=useMemo(()=>{
+   const students=Array.isArray(registeredStudents)?registeredStudents:[];
+   return students.filter(s=>!session?.school||!s.school||s.school===session.school)
+     .filter(s=>!session?.grade||s.grade===session.grade)
+     .filter(s=>!session?.rombel||s.rombel===session.rombel);
+ },[registeredStudents,session?.school,session?.grade,session?.rombel]);
+ const teacherVisibleStudents=useMemo(()=>{
+   if(session?.role!=="teacher")return [];
+   const classes=Array.isArray(teacherClasses)?teacherClasses:[];
+   const students=Array.isArray(registeredStudents)?registeredStudents:[];
+   const ids=new Set(classes.map(c=>c.id));
+   return students.filter(s=>s.classTeacherUid===session.uid || (s.classId&&ids.has(s.classId)));
+ },[registeredStudents,teacherClasses,session?.uid,session?.role]);
  const visibleStudentIds=useMemo(()=>new Set(teacherVisibleStudents.map(s=>s.uid)),[teacherVisibleStudents]);
- const teacherAttempts=useMemo(()=>teacherData.attempts.filter(a=>visibleStudentIds.has(a.uid)),[teacherData.attempts,visibleStudentIds]);
- const teacherReflections=useMemo(()=>teacherData.reflections.filter(r=>visibleStudentIds.has(r.uid)),[teacherData.reflections,visibleStudentIds]);
- const teacherAttendance=useMemo(()=>teacherData.attendance.filter(r=>visibleStudentIds.has(r.uid)),[teacherData.attendance,visibleStudentIds]);
- const teacherExamResults=useMemo(()=>teacherData.examResults.filter(r=>visibleStudentIds.has(r.uid)),[teacherData.examResults,visibleStudentIds]);
- const teacherLearningEvents=useMemo(()=>teacherData.events.filter(e=>visibleStudentIds.has(e.uid)),[teacherData.events,visibleStudentIds]);
+ const teacherAttempts=useMemo(()=>{
+   const rows=Array.isArray(teacherData?.attempts)?teacherData.attempts:[];
+   return rows.filter(a=>visibleStudentIds.has(a.uid));
+ },[teacherData?.attempts,visibleStudentIds]);
+ const teacherReflections=useMemo(()=>{
+   const rows=Array.isArray(teacherData?.reflections)?teacherData.reflections:[];
+   return rows.filter(r=>visibleStudentIds.has(r.uid));
+ },[teacherData?.reflections,visibleStudentIds]);
+ const teacherAttendance=useMemo(()=>{
+   const rows=Array.isArray(teacherData?.attendance)?teacherData.attendance:[];
+   return rows.filter(r=>visibleStudentIds.has(r.uid));
+ },[teacherData?.attendance,visibleStudentIds]);
+ const teacherExamResults=useMemo(()=>{
+   const rows=Array.isArray(teacherData?.examResults)?teacherData.examResults:[];
+   return rows.filter(r=>visibleStudentIds.has(r.uid));
+ },[teacherData?.examResults,visibleStudentIds]);
+ const teacherLearningEvents=useMemo(()=>{
+   const rows=Array.isArray(teacherData?.events)?teacherData.events:[];
+   return rows.filter(e=>visibleStudentIds.has(e.uid));
+ },[teacherData?.events,visibleStudentIds]);
 
  const navigate=(screen,comicId=null,readerContext=null)=>{setState(s=>({...s,screen,selectedComicId:typeof comicId==="string"?comicId:(screen==="tutor"?s.selectedComicId:comicId),currentReaderContext:readerContext||s.currentReaderContext}));setDrawerOpen(false)};
  if(!session)return authPage==="register"?<RegistrationPage onBack={()=>setAuthPage("login")} onRegister={s=>{setSession(s);setState(x=>({...x,screen:s.role==="admin"?"admin-dashboard":s.role==="teacher"?"teacher-dashboard":"student-dashboard"}));setAuthPage("login")}}/>:<LoginPage onRegisterClick={()=>setAuthPage("register")} onLogin={s=>{setSession(s);setState(x=>({...x,screen:s.role==="admin"?"admin-dashboard":s.role==="teacher"?"teacher-dashboard":"student-dashboard"}));}}/>;
@@ -249,10 +275,11 @@ export default function App(){
 
 function TeacherGrades({students,session,questions,attempts=[],events=[],examResults=[],onRefresh,teacherClasses=[]}){
  const [school,setSchool]=useState(session?.school||""); const [grade,setGrade]=useState(""); const [rombel,setRombel]=useState("");
- const schools=[...new Set(teacherClasses.map(c=>c.school).filter(Boolean))];
- const grades=[...new Set(teacherClasses.filter(c=>!school||c.school===school).map(c=>c.grade).filter(Boolean))];
- const rombels=[...new Set(teacherClasses.filter(c=>(!school||c.school===school)&&(!grade||c.grade===grade)).map(c=>c.rombel).filter(Boolean))];
- const classRows=teacherClasses.filter(c=>(!school||c.school===school)&&(!grade||c.grade===grade)&&(!rombel||String(c.rombel)===String(rombel)));
+ const classList=Array.isArray(teacherClasses)?teacherClasses:[];
+ const schools=[...new Set(classList.map(c=>c.school).filter(Boolean))];
+ const grades=[...new Set(classList.filter(c=>!school||c.school===school).map(c=>c.grade).filter(Boolean))];
+ const rombels=[...new Set(classList.filter(c=>(!school||c.school===school)&&(!grade||c.grade===grade)).map(c=>c.rombel).filter(Boolean))];
+ const classRows=classList.filter(c=>(!school||c.school===school)&&(!grade||c.grade===grade)&&(!rombel||String(c.rombel)===String(rombel)));
  const selectedIds=new Set(classRows.map(c=>c.id));
  const visible=students.filter(s=>selectedIds.has(s.classId)||(!s.classId&&(!school||s.school===school)&&(!grade||s.grade===grade)&&(!rombel||String(s.rombel)===String(rombel))));
  const avg=(key)=>visible.length?Math.round(visible.reduce((sum,s)=>sum+Number(s[key]||0),0)/visible.length):0; const attemptCount=new Map();const practiceScore=new Map();attempts.forEach(a=>{attemptCount.set(a.uid,(attemptCount.get(a.uid)||0)+1);if((a.mode||"practice")==="practice"){const x=practiceScore.get(a.uid)||{n:0,c:0};x.n++;if(a.correct)x.c++;practiceScore.set(a.uid,x);}}); const eventCount=new Map();events.forEach(e=>eventCount.set(e.uid,(eventCount.get(e.uid)||0)+1)); const examMap=new Map(examResults.map(r=>[r.uid,r]));
