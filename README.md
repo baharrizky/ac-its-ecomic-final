@@ -1,4 +1,6 @@
-PATCH V9 — CLASS MANAGEMENT + ROMBEL DISPLAY FIX
+PATCH V9.1 — BUILD FIX + CLASS MANAGEMENT + ROMBEL DISPLAY
+
+This is a corrected V9 patch. It fixes the V9 build error in ProfilePage.jsx caused by a duplicate classLabel import.
 
 Replace these files:
 - src/services/accessControlService.js
@@ -7,13 +9,14 @@ Replace these files:
 - src/pages/student/ProfilePage.jsx
 - src/utils/classLabel.js
 
-Changes:
-1. Prevents legacy duplicate class labels such as "X X 1"; canonical display/storage is "X 1".
-2. Fixes Student Profile so it does not render grade twice.
-3. Class Management now supports Aktifkan/Nonaktifkan, Buka/Tutup pendaftaran, and Hapus.
-4. Class status changes persist to Firestore.
-5. Teacher student lookup uses a single Firestore equality query when scoped by teacher, avoiding unnecessary composite-index failures that can make Dashboard Guru show 0 students.
-6. Existing legacy rombel values are canonicalized when the teacher class list is loaded.
+V9 features retained:
+1. Canonical class labels such as X 1; prevents X X 1 display.
+2. Class Management: Aktifkan/Nonaktifkan, Buka/Tutup pendaftaran, Hapus.
+3. Class status changes persist to Firestore.
+4. Teacher student lookup uses a single equality query scoped by teacher.
+5. Existing legacy rombel values are canonicalized when the teacher class list is loaded.
 
-The existing X 1 class should be kept for testing.
+V9.1 build fix:
+- ProfilePage.jsx contains exactly one classLabel import.
+
 After deployment, hard-refresh the browser (Ctrl+Shift+R).
