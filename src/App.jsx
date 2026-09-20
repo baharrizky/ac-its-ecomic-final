@@ -178,7 +178,10 @@ export default function App(){
 
  const mode=session?.role||null;
  const selectedComic=useMemo(()=>state.comics.find(c=>c.id===state.selectedComicId)||null,[state.comics,state.selectedComicId]);
- const visibleStudentQuestions=useMemo(()=>state.questions.filter(q=>q.status!=="Draft" && (q.assessmentType||"practice")==="practice" && (!q.educationLevel||q.educationLevel===session?.educationLevel) && (!q.grade||q.grade===session?.grade)),[state.questions,session?.educationLevel,session?.grade]);
+ const visibleStudentQuestions=useMemo(()=>{
+    const questions=Array.isArray(state.questions)?state.questions:[];
+    return questions.filter(q=>q.status!=="Draft" && (q.assessmentType||"practice")==="practice" && (!q.educationLevel||q.educationLevel===session?.educationLevel) && (!q.grade||q.grade===session?.grade));
+  },[state.questions,session?.educationLevel,session?.grade]);
  const leaderboard=useMemo(()=>registeredStudents.filter(s=>!session?.school||!s.school||s.school===session.school).filter(s=>!session?.grade||s.grade===session.grade).filter(s=>!session?.rombel||s.rombel===session.rombel),[registeredStudents,session?.school,session?.grade,session?.rombel]);
  const teacherVisibleStudents=useMemo(()=>{if(session?.role!=="teacher")return [];const ids=new Set(teacherClasses.map(c=>c.id));return registeredStudents.filter(s=>s.classTeacherUid===session.uid || (s.classId&&ids.has(s.classId)));},[registeredStudents,teacherClasses,session?.uid,session?.role]);
  const visibleStudentIds=useMemo(()=>new Set(teacherVisibleStudents.map(s=>s.uid)),[teacherVisibleStudents]);
