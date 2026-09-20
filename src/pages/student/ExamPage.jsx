@@ -7,7 +7,7 @@ const renderEquation=(value)=>{try{return katex.renderToString(value,{displayMod
 const MASTERY_GATE=0.70;
 
 function buildExamQuestions(questions){
-  const usable=questions.filter(q=>q.status!=="Draft" && (q.assessmentType || "practice") === "exam" && Array.isArray(q.options) && q.options.length);
+  const usable=questions.filter(q=>q.status!=="Draft" && Array.isArray(q.options) && q.options.length);
   const groups=new Map();
   usable.forEach(q=>{const key=q.conceptId||"__general";if(!groups.has(key))groups.set(key,[]);groups.get(key).push(q)});
   const buckets=[...groups.values()].map(rows=>rows.slice().sort((a,b)=>Number(a.level??a.difficulty??1)-Number(b.level??b.difficulty??1)));

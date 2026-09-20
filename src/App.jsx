@@ -178,44 +178,15 @@ export default function App(){
 
  const mode=session?.role||null;
  const selectedComic=useMemo(()=>state.comics.find(c=>c.id===state.selectedComicId)||null,[state.comics,state.selectedComicId]);
- const visibleStudentQuestions=useMemo(()=>{
-    const questions=Array.isArray(state.questions)?state.questions:[];
-    return questions.filter(q=>q.status!=="Draft" && (q.assessmentType||"practice")==="practice" && (!q.educationLevel||q.educationLevel===session?.educationLevel) && (!q.grade||q.grade===session?.grade));
-  },[state.questions,session?.educationLevel,session?.grade]);
- const leaderboard=useMemo(()=>{
-   const students=Array.isArray(registeredStudents)?registeredStudents:[];
-   return students.filter(s=>!session?.school||!s.school||s.school===session.school)
-     .filter(s=>!session?.grade||s.grade===session.grade)
-     .filter(s=>!session?.rombel||s.rombel===session.rombel);
- },[registeredStudents,session?.school,session?.grade,session?.rombel]);
- const teacherVisibleStudents=useMemo(()=>{
-   if(session?.role!=="teacher")return [];
-   const classes=Array.isArray(teacherClasses)?teacherClasses:[];
-   const students=Array.isArray(registeredStudents)?registeredStudents:[];
-   const ids=new Set(classes.map(c=>c.id));
-   return students.filter(s=>s.classTeacherUid===session.uid || (s.classId&&ids.has(s.classId)));
- },[registeredStudents,teacherClasses,session?.uid,session?.role]);
+ const visibleStudentQuestions=useMemo(()=>state.questions.filter(q=>q.status!=="Draft" && (!q.educationLevel||q.educationLevel===session?.educationLevel) && (!q.grade||q.grade===session?.grade)),[state.questions,session?.educationLevel,session?.grade]);
+ const leaderboard=useMemo(()=>registeredStudents.filter(s=>!session?.school||!s.school||s.school===session.school).filter(s=>!session?.grade||s.grade===session.grade).filter(s=>!session?.rombel||s.rombel===session.rombel),[registeredStudents,session?.school,session?.grade,session?.rombel]);
+ const teacherVisibleStudents=useMemo(()=>{if(session?.role!=="teacher")return [];const ids=new Set(teacherClasses.map(c=>c.id));return registeredStudents.filter(s=>s.classTeacherUid===session.uid || (s.classId&&ids.has(s.classId)));},[registeredStudents,teacherClasses,session?.uid,session?.role]);
  const visibleStudentIds=useMemo(()=>new Set(teacherVisibleStudents.map(s=>s.uid)),[teacherVisibleStudents]);
- const teacherAttempts=useMemo(()=>{
-   const rows=Array.isArray(teacherData?.attempts)?teacherData.attempts:[];
-   return rows.filter(a=>visibleStudentIds.has(a.uid));
- },[teacherData?.attempts,visibleStudentIds]);
- const teacherReflections=useMemo(()=>{
-   const rows=Array.isArray(teacherData?.reflections)?teacherData.reflections:[];
-   return rows.filter(r=>visibleStudentIds.has(r.uid));
- },[teacherData?.reflections,visibleStudentIds]);
- const teacherAttendance=useMemo(()=>{
-   const rows=Array.isArray(teacherData?.attendance)?teacherData.attendance:[];
-   return rows.filter(r=>visibleStudentIds.has(r.uid));
- },[teacherData?.attendance,visibleStudentIds]);
- const teacherExamResults=useMemo(()=>{
-   const rows=Array.isArray(teacherData?.examResults)?teacherData.examResults:[];
-   return rows.filter(r=>visibleStudentIds.has(r.uid));
- },[teacherData?.examResults,visibleStudentIds]);
- const teacherLearningEvents=useMemo(()=>{
-   const rows=Array.isArray(teacherData?.events)?teacherData.events:[];
-   return rows.filter(e=>visibleStudentIds.has(e.uid));
- },[teacherData?.events,visibleStudentIds]);
+ const teacherAttempts=useMemo(()=>teacherData.attempts.filter(a=>visibleStudentIds.has(a.uid)),[teacherData.attempts,visibleStudentIds]);
+ const teacherReflections=useMemo(()=>teacherData.reflections.filter(r=>visibleStudentIds.has(r.uid)),[teacherData.reflections,visibleStudentIds]);
+ const teacherAttendance=useMemo(()=>teacherData.attendance.filter(r=>visibleStudentIds.has(r.uid)),[teacherData.attendance,visibleStudentIds]);
+ const teacherExamResults=useMemo(()=>teacherData.examResults.filter(r=>visibleStudentIds.has(r.uid)),[teacherData.examResults,visibleStudentIds]);
+ const teacherLearningEvents=useMemo(()=>teacherData.events.filter(e=>visibleStudentIds.has(e.uid)),[teacherData.events,visibleStudentIds]);
 
  const navigate=(screen,comicId=null,readerContext=null)=>{setState(s=>({...s,screen,selectedComicId:typeof comicId==="string"?comicId:(screen==="tutor"?s.selectedComicId:comicId),currentReaderContext:readerContext||s.currentReaderContext}));setDrawerOpen(false)};
  if(!session)return authPage==="register"?<RegistrationPage onBack={()=>setAuthPage("login")} onRegister={s=>{setSession(s);setState(x=>({...x,screen:s.role==="admin"?"admin-dashboard":s.role==="teacher"?"teacher-dashboard":"student-dashboard"}));setAuthPage("login")}}/>:<LoginPage onRegisterClick={()=>setAuthPage("register")} onLogin={s=>{setSession(s);setState(x=>({...x,screen:s.role==="admin"?"admin-dashboard":s.role==="teacher"?"teacher-dashboard":"student-dashboard"}));}}/>;
@@ -226,13 +197,13 @@ export default function App(){
  const handleDeleteQuestion=async id=>{setState(s=>({...s,questions:s.questions.filter(q=>q.id!==id)}));await deleteCloudQuestion(id);};
 
  const touchActivity=(model,bonus=0)=>{const now=new Date();const today=now.toISOString().slice(0,10);const last=model.lastActivityAt?.slice?.(0,10);let streak=model.streak||0;if(last!==today){if(last){const prev=new Date(last);const diff=Math.round((Date.UTC(now.getFullYear(),now.getMonth(),now.getDate())-Date.UTC(prev.getFullYear(),prev.getMonth(),prev.getDate()))/86400000);streak=diff===1?Math.max(1,streak+1):1;}else streak=1;}return {...model,streak,xp:(model.xp||0)+bonus,lastActivityAt:now.toISOString()};};
- const handleAnswer=async(q,aIndex,modeName="practice",durationSeconds=0,meta={})=>{
+ const handleAnswer=async(q,aIndex,modeName="practice",durationSeconds=0)=>{
    const baseline=diagnoseAnswer(q,aIndex);
    const ai=await correctAnswerWithAI({question:q,selectedAnswer:q.options?.[aIndex],correctAnswer:q.options?.[q.answer],baselineDiagnosis:baseline,context:{educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school,studentMastery:state.studentModel?.concepts?.[q.conceptId]?.mastery||0,conceptId:q.conceptId,conceptName:availableConcepts.find(c=>c.id===q.conceptId)?.name||q.conceptId}});
    const d={...baseline,...ai,explanation:ai?.explanation||baseline.explanation,misconceptionTag:ai?.misconceptionTag??baseline.misconceptionTag,confidence:Number(ai?.confidence??baseline.confidence)};
    const next=touchActivity(updateMastery(state.studentModel,q.conceptId,d),d.correct?10:3);
    setState(s=>({...s,studentModel:next}));
-   if(session?.uid){await Promise.all([saveStudentModel(session.uid,next),recordAttempt({uid:session.uid,name:session.name,questionId:q.id,conceptId:q.conceptId,selectedIndex:aIndex,correct:d.correct,score:d.correct?100:0,mode:modeName,educationLevel:session.educationLevel,grade:session.grade,school:session.school,teacherUid:session.classTeacherUid||null,classId:session.classId||null,misconceptionTag:d.misconceptionTag,hintsUsed:Number(meta.hintsUsed||0),aiCorrection:d}),recordLearningEvent({uid:session.uid,teacherUid:session.classTeacherUid||null,classId:session.classId||null,type:modeName==="reader-quiz"?"quiz_attempt":"question_attempt",mode:modeName,durationSeconds:Number(durationSeconds)||0,payload:{questionId:q.id,conceptId:q.conceptId,correct:d.correct,mode:modeName,hintsUsed:Number(meta.hintsUsed||0),aiCorrection:d}})]);}
+   if(session?.uid){await Promise.all([saveStudentModel(session.uid,next),recordAttempt({uid:session.uid,name:session.name,questionId:q.id,conceptId:q.conceptId,selectedIndex:aIndex,correct:d.correct,score:d.correct?100:0,mode:modeName,educationLevel:session.educationLevel,grade:session.grade,school:session.school,teacherUid:session.classTeacherUid||null,classId:session.classId||null,misconceptionTag:d.misconceptionTag,aiCorrection:d}),recordLearningEvent({uid:session.uid,teacherUid:session.classTeacherUid||null,classId:session.classId||null,type:modeName==="reader-quiz"?"quiz_attempt":"question_attempt",mode:modeName,durationSeconds:Number(durationSeconds)||0,payload:{questionId:q.id,conceptId:q.conceptId,correct:d.correct,mode:modeName,aiCorrection:d}})]);}
    let recommendation=null;
    if(modeName!=="exam"){
      recommendation=await recommendNextQuestion({studentModel:next,questions:visibleStudentQuestions,recentAttempts:[{questionId:q.id,conceptId:q.conceptId,correct:d.correct}]});
@@ -275,15 +246,14 @@ export default function App(){
 
 function TeacherGrades({students,session,questions,attempts=[],events=[],examResults=[],onRefresh,teacherClasses=[]}){
  const [school,setSchool]=useState(session?.school||""); const [grade,setGrade]=useState(""); const [rombel,setRombel]=useState("");
- const classList=Array.isArray(teacherClasses)?teacherClasses:[];
- const schools=[...new Set(classList.map(c=>c.school).filter(Boolean))];
- const grades=[...new Set(classList.filter(c=>!school||c.school===school).map(c=>c.grade).filter(Boolean))];
- const rombels=[...new Set(classList.filter(c=>(!school||c.school===school)&&(!grade||c.grade===grade)).map(c=>c.rombel).filter(Boolean))];
- const classRows=classList.filter(c=>(!school||c.school===school)&&(!grade||c.grade===grade)&&(!rombel||String(c.rombel)===String(rombel)));
+ const schools=[...new Set(teacherClasses.map(c=>c.school).filter(Boolean))];
+ const grades=[...new Set(teacherClasses.filter(c=>!school||c.school===school).map(c=>c.grade).filter(Boolean))];
+ const rombels=[...new Set(teacherClasses.filter(c=>(!school||c.school===school)&&(!grade||c.grade===grade)).map(c=>c.rombel).filter(Boolean))];
+ const classRows=teacherClasses.filter(c=>(!school||c.school===school)&&(!grade||c.grade===grade)&&(!rombel||String(c.rombel)===String(rombel)));
  const selectedIds=new Set(classRows.map(c=>c.id));
  const visible=students.filter(s=>selectedIds.has(s.classId)||(!s.classId&&(!school||s.school===school)&&(!grade||s.grade===grade)&&(!rombel||String(s.rombel)===String(rombel))));
- const avg=(key)=>visible.length?Math.round(visible.reduce((sum,s)=>sum+Number(s[key]||0),0)/visible.length):0; const attemptCount=new Map();const practiceScore=new Map();attempts.forEach(a=>{attemptCount.set(a.uid,(attemptCount.get(a.uid)||0)+1);if((a.mode||"practice")==="practice"){const x=practiceScore.get(a.uid)||{n:0,c:0};x.n++;if(a.correct)x.c++;practiceScore.set(a.uid,x);}}); const eventCount=new Map();events.forEach(e=>eventCount.set(e.uid,(eventCount.get(e.uid)||0)+1)); const examMap=new Map(examResults.map(r=>[r.uid,r]));
- return <div><div className="page-kicker">Student Assessment</div><h1 className="page-title">Nilai Siswa</h1><p className="page-desc">Filter sekolah, kelas, dan rombel. Siswa mengikuti kelas yang dikelola Guru.</p><div className="card" style={{marginBottom:18}}><div className="section-head"><div><h2>Kontrol Kelas</h2><span>Pilih ruang kelas yang sedang dilihat.</span></div><button className="btn" onClick={onRefresh}>↻ Perbarui</button></div><div className="register-grid"><div><label className="label">Sekolah</label><select value={school} onChange={e=>{setSchool(e.target.value);setGrade("");setRombel("")}}><option value="">Semua sekolah</option>{schools.map(v=><option key={v}>{v}</option>)}</select></div><div><label className="label">Kelas</label><select value={grade} onChange={e=>{setGrade(e.target.value);setRombel("")}}><option value="">Semua kelas</option>{grades.map(v=><option key={v}>{v}</option>)}</select></div><div><label className="label">Rombel</label><select value={rombel} onChange={e=>setRombel(e.target.value)}><option value="">Semua rombel</option>{rombels.map(v=><option key={v}>{v}</option>)}</select></div></div></div><div className="stats-row"><div className="ac-stat"><div className="stat-icon purple">▣</div><div><span>Rata-rata Mastery</span><strong>{avg("mastery")}%</strong></div></div><div className="ac-stat"><div className="stat-icon blue">✓</div><div><span>Siswa</span><strong>{visible.length}</strong></div></div><div className="ac-stat"><div className="stat-icon green">★</div><div><span>Rata-rata Ujian</span><strong>{avg("exam")}</strong></div></div><div className="ac-stat"><div className="stat-icon orange">✎</div><div><span>Rata-rata Latihan</span><strong>{visible.length?Math.round(visible.reduce((sum,s)=>{const p=practiceScore.get(s.uid)||{n:0,c:0};return sum+(p.n?p.c/p.n*100:0)},0)/visible.length):0}%</strong></div></div></div><div className="card"><h2>Rekap Nilai</h2>{visible.length?<table className="table"><thead><tr><th>Siswa</th><th>Sekolah</th><th>Kelas</th><th>Latihan</th><th>Ujian</th><th>Mastery</th><th>Attempt</th><th>Aktivitas</th><th>XP</th></tr></thead><tbody>{visible.map(s=><tr key={s.uid||s.email}><td><strong>{s.name}</strong></td><td>{s.school||"-"}</td><td>{s.grade||"-"} {s.rombel||""}</td><td>{(()=>{const p=practiceScore.get(s.uid)||{n:0,c:0};return p.n?`${Math.round(p.c/p.n*100)}%`:"-"})()}</td><td>{examMap.get(s.uid)?.score ?? s.exam ?? 0}</td><td>{s.mastery||0}%</td><td>{eventCount.get(s.uid)||0}</td><td>{s.xp||0}</td></tr>)}</tbody></table>:<div className="empty-state"><strong>{teacherClasses.length?"Belum ada siswa pada kelas ini.":"Belum ada kelas."}</strong><span>Daftar akan terisi otomatis setelah siswa terhubung ke kelas.</span></div>}</div></div>
+ const avg=(key)=>visible.length?Math.round(visible.reduce((sum,s)=>sum+Number(s[key]||0),0)/visible.length):0; const attemptCount=new Map();attempts.forEach(a=>attemptCount.set(a.uid,(attemptCount.get(a.uid)||0)+1)); const eventCount=new Map();events.forEach(e=>eventCount.set(e.uid,(eventCount.get(e.uid)||0)+1)); const examMap=new Map(examResults.map(r=>[r.uid,r]));
+ return <div><div className="page-kicker">Student Assessment</div><h1 className="page-title">Nilai Siswa</h1><p className="page-desc">Filter sekolah, kelas, dan rombel. Siswa mengikuti kelas yang dikelola Guru.</p><div className="card" style={{marginBottom:18}}><div className="section-head"><div><h2>Kontrol Kelas</h2><span>Pilih ruang kelas yang sedang dilihat.</span></div><button className="btn" onClick={onRefresh}>↻ Perbarui</button></div><div className="register-grid"><div><label className="label">Sekolah</label><select value={school} onChange={e=>{setSchool(e.target.value);setGrade("");setRombel("")}}><option value="">Semua sekolah</option>{schools.map(v=><option key={v}>{v}</option>)}</select></div><div><label className="label">Kelas</label><select value={grade} onChange={e=>{setGrade(e.target.value);setRombel("")}}><option value="">Semua kelas</option>{grades.map(v=><option key={v}>{v}</option>)}</select></div><div><label className="label">Rombel</label><select value={rombel} onChange={e=>setRombel(e.target.value)}><option value="">Semua rombel</option>{rombels.map(v=><option key={v}>{v}</option>)}</select></div></div></div><div className="stats-row"><div className="ac-stat"><div className="stat-icon purple">▣</div><div><span>Rata-rata Mastery</span><strong>{avg("mastery")}%</strong></div></div><div className="ac-stat"><div className="stat-icon blue">✓</div><div><span>Siswa</span><strong>{visible.length}</strong></div></div><div className="ac-stat"><div className="stat-icon green">★</div><div><span>Rata-rata Ujian</span><strong>{avg("exam")}</strong></div></div><div className="ac-stat"><div className="stat-icon orange">✎</div><div><span>Bank Soal</span><strong>{questions.length}</strong></div></div></div><div className="card"><h2>Rekap Nilai</h2>{visible.length?<table className="table"><thead><tr><th>Siswa</th><th>Sekolah</th><th>Kelas</th><th>Evaluasi</th><th>Ujian</th><th>Mastery</th><th>Aktivitas</th><th>XP</th></tr></thead><tbody>{visible.map(s=><tr key={s.uid||s.email}><td><strong>{s.name}</strong></td><td>{s.school||"-"}</td><td>{s.grade||"-"} {s.rombel||""}</td><td>{attemptCount.get(s.uid)||0}</td><td>{examMap.get(s.uid)?.score ?? s.exam ?? 0}</td><td>{s.mastery||0}%</td><td>{eventCount.get(s.uid)||0}</td><td>{s.xp||0}</td></tr>)}</tbody></table>:<div className="empty-state"><strong>{teacherClasses.length?"Belum ada siswa pada kelas ini.":"Belum ada kelas."}</strong><span>Daftar akan terisi otomatis setelah siswa terhubung ke kelas.</span></div>}</div></div>
 }
 function TeacherProfile({session}){return <div><div className="page-kicker">Account</div><h1 className="page-title">Profil Guru</h1><p className="page-desc">Informasi akun pengelola konten dan kelas.</p><div className="profile-layout"><div className="profile-card"><div className="big-avatar">{session.name?.[0]||"G"}</div><h2>{session.name}</h2><span>Guru · {session.school||"Sekolah belum diatur"}</span></div><div className="card"><div className="field-row"><span>👤</span><div><small>Nama</small><strong>{session.name}</strong></div></div><div className="field-row"><span>✉</span><div><small>Email</small><strong>{session.email}</strong></div></div><div className="field-row"><span>🏫</span><div><small>Sekolah</small><strong>{session.school||"-"}</strong></div></div><div className="field-row"><span>🔐</span><div><small>Role</small><strong>Teacher</strong></div></div></div></div></div>}
 

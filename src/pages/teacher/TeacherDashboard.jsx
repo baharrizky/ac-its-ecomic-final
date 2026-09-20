@@ -19,18 +19,11 @@ export default function TeacherDashboard({
  const [result,setResult]=useState(null);
  const [loading,setLoading]=useState(false);
 
- const studentList=Array.isArray(students)?students:[];
- const classList=Array.isArray(teacherClasses)?teacherClasses:[];
- const modelList=Array.isArray(models)?models:[];
- const attemptList=Array.isArray(attempts)?attempts:[];
- const eventList=Array.isArray(events)?events:[];
- const comics=Array.isArray(state?.comics)?state.comics:[];
-
- const scopedStudents=studentList.filter(
+ const scopedStudents=students.filter(
    s =>
      !session?.uid ||
      s.classTeacherUid===session.uid ||
-     classList.some(c=>c.id===s.classId)
+     teacherClasses.some(c=>c.id===s.classId)
  );
 
  useEffect(()=>{
@@ -38,15 +31,15 @@ export default function TeacherDashboard({
  },[session?.uid]);
 
  const byUid=useMemo(
-   ()=>new Map(modelList.map(m=>[m.uid,m])),
-   [modelList]
+   ()=>new Map(models.map(m=>[m.uid,m])),
+   [models]
  );
 
- const published=comics.filter(
+ const published=state.comics.filter(
    c=>c.status==="Published"
  ).length;
 
- const episodes=comics.reduce(
+ const episodes=state.comics.reduce(
    (n,c)=>n+(c.episodes?.length||0),
    0
  );
@@ -67,12 +60,12 @@ export default function TeacherDashboard({
      {};
 
    const studentAttempts=
-     attemptList
+     attempts
        .filter(a=>a.uid===selectedStudent.uid)
        .slice(0,25);
 
    const studentEvents=
-     eventList
+     events
        .filter(e=>e.uid===selectedStudent.uid)
        .slice(0,25);
 

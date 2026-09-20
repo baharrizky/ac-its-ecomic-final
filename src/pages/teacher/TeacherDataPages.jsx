@@ -46,7 +46,7 @@ export function TeacherKnowledge(){
  async function refresh(){setItems(await listKnowledgeItems())}
  useEffect(()=>{refresh()},[]);
  function start(){setError("");setPrerequisiteInput("");setEditing(type==="concept"?{id:"",type:"concept",conceptId:"",title:"",content:"",prerequisiteIds:[]}:{id:`kb-${Date.now()}`,type:"source",title:"",content:"",prerequisiteIds:[]});}
- async function save(){setError("");try{if(editing.type==="concept"){const prerequisiteIds=prerequisiteInput.split(",").map(x=>x.trim()).filter(Boolean);await saveConcept({id:editing.conceptId,title:editing.title,content:editing.content,prerequisiteIds});}else{if(!editing.title.trim())throw new Error("Judul wajib diisi.");await saveKnowledgeItem({...editing,prerequisiteIds:[]});}setEditing(null);await refresh();}catch(e){setError(e?.message||"Gagal menyimpan.");}}
+ async function save(){setError("");try{if(editing.type==="concept"){await saveConcept({id:editing.conceptId,title:editing.title,content:editing.content,prerequisiteIds:editing.prerequisiteIds});}else{if(!editing.title.trim())throw new Error("Judul wajib diisi.");await saveKnowledgeItem({...editing,prerequisiteIds:[]});}setEditing(null);await refresh();}catch(e){setError(e?.message||"Gagal menyimpan.");}}
  async function remove(id,typeValue){if(!window.confirm("Hapus item ini?"))return;if(typeValue==="concept")await removeConcept(id);else await deleteKnowledgeItem(id);await refresh();}
  const concepts=items.filter(i=>i.type==="concept").sort((a,b)=>String(a.conceptId||a.id).localeCompare(String(b.conceptId||b.id),undefined,{numeric:true}));
  const sources=items.filter(i=>i.type!=="concept");
@@ -57,7 +57,11 @@ export function TeacherKnowledge(){
  {editing&&<div className="modal-wrap"><div className="modal"><div className="modal-head"><div><div className="page-kicker">Knowledge Authoring</div><h2>{editing.type==="concept"?(editing.id?"Edit Konsep":"Tambah Konsep"):"Sumber Materi"}</h2></div><button className="close" onClick={()=>{setEditing(null);setPrerequisiteInput("");}}>×</button></div>
  {editing.type==="concept"?<><div className="field"><label className="label">Kode Konsep</label><input value={editing.conceptId} onChange={e=>setEditing({...editing,conceptId:e.target.value.toUpperCase().replace(/\s+/g,"-")})} placeholder="Contoh: E1, GEO-01, TRIG-A"/></div><div className="field"><label className="label">Nama Konsep</label><input value={editing.title} onChange={e=>setEditing({...editing,title:e.target.value})} placeholder="Nama konsep"/></div><div className="field"><label className="label">Deskripsi / definisi</label><textarea rows="5" value={editing.content} onChange={e=>setEditing({...editing,content:e.target.value})}/></div><div className="field"><label className="label">Kode prasyarat</label><input
   value={prerequisiteInput}
-  onChange={e=>setPrerequisiteInput(e.target.value)}
+  onChange={e=>{
+    const raw=e.target.value;
+    setPrerequisiteInput(raw);
+    setEditing({...editing,prerequisiteIds:raw.split(",").map(x=>x.trim()).filter(Boolean)});
+  }}
   placeholder="E1, E2"
 /><div className="subtle">Kosongkan jika tidak memiliki prasyarat.</div></div></>:<><div className="field"><label className="label">Judul</label><input value={editing.title} onChange={e=>setEditing({...editing,title:e.target.value})}/></div><div className="field"><label className="label">Isi / Sumber</label><textarea rows="7" value={editing.content} onChange={e=>setEditing({...editing,content:e.target.value})}/></div></>}
  <div className="actions"><button className="btn" onClick={()=>{setEditing(null);setPrerequisiteInput("");}}>Batal</button><button className="btn-primary" onClick={save}>Simpan</button></div></div></div>}

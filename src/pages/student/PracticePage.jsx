@@ -20,7 +20,7 @@ function fallbackHints(q){
 }
 
 export default function PracticePage({ questions = [], studentModel = {}, concepts = [], onAnswer, onAIExplain, onHint }) {
-  const published = useMemo(()=>questions.filter(q=>q.status !== "Draft" && (q.assessmentType || "practice") === "practice" && Array.isArray(q.options) && q.options.length),[questions]);
+  const published = useMemo(()=>questions.filter(q=>q.status !== "Draft" && Array.isArray(q.options) && q.options.length),[questions]);
   const recommendation = useMemo(()=>chooseNextActivity(studentModel,published),[studentModel,published]);
   const initial = recommendation.questionId ? published.find(q=>q.id===recommendation.questionId) : published[0];
   const startIndex = Math.max(0,published.findIndex(q=>q.id===initial?.id));
@@ -31,7 +31,6 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
   const [hintsUsed,setHintsUsed]=useState(0);
   const [aiReply,setAiReply]=useState("");
   const [loadingAI,setLoadingAI]=useState(false);
-  const [nextRecommendation,setNextRecommendation]=useState(null);
   const q=published[index];
   const conceptName=concepts.find(c=>c.id===q?.conceptId)?.name||q?.conceptId||"Konsep";
   const hints=Array.isArray(q?.hints)&&q.hints.some(Boolean) ? q.hints.filter(Boolean).slice(0,3) : fallbackHints(q);
@@ -41,9 +40,8 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
   async function choose(i){
     if(diagnosis?.correct) return;
     setSelected(i);
-    const d=await onAnswer?.(q,i,"practice",0,{hintsUsed});
+    const d=await onAnswer?.(q,i,"practice");
     setDiagnosis(d||null);
-    setNextRecommendation(d?.recommendation || null);
     setAiReply("");
   }
   async function useHint(){
@@ -57,10 +55,9 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
     setSelected(null);
     setDiagnosis(null);
     setAiReply("");
-    setNextRecommendation(null);
   }
   async function askAI(){
-    if(!diagnosis?.correct || !onAIExplain) return;
+    if(!diagnosis || !onAIExplain) return;
     setLoadingAI(true);
     try {
       const r=await onAIExplain({
@@ -71,7 +68,7 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
     } finally { setLoadingAI(false); }
   }
   function next(){
-    const rec=nextRecommendation || diagnosis?.recommendation;
+    const rec=diagnosis?.recommendation;
     if(rec?.questionId && rec.questionId!==q.id){
       const nextIndex=published.findIndex(item=>item.id===rec.questionId);
       if(nextIndex>=0){setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);setIndex(nextIndex);return;}
@@ -105,13 +102,13 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {hintLevel<3&&<button className="btn" onClick={useHint}>💡 Hint {hintLevel+1}</button>}
               <button className="btn" onClick={retry}>↻ Coba lagi</button>
-              <button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"AI sedang menjelaskan…":"Tanya Tutor"}</button>
+              <button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"AI sedang menjelaskan…":"Tanya AI"}</button>
               {hintLevel>=3&&<button className="btn-primary" onClick={next}>Lanjut →</button>}
             </div>
             {hintLevel>0&&<div className="ai-feedback"><strong>Hint {hintLevel}</strong><p>{hints[Math.min(hintLevel-1,hints.length-1)]}</p></div>}
             {aiReply&&<div className="ai-feedback"><strong>AI Tutor</strong><AIResponse text={aiReply}/></div>}
           </div>}
-          {diagnosis.correct&&<div style={{marginTop:10}}><div className="ai-feedback"><strong>Rekomendasi berikutnya</strong><p>{nextRecommendation?.reason || `Lanjutkan ke soal berikutnya pada level yang sesuai dengan hasilmu. Hint yang digunakan: ${hintsUsed}.`}</p>{nextRecommendation?.targetLevel&&<div className="subtle">Target level berikutnya: <b>{nextRecommendation.targetLevel}</b></div>}</div><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}><button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"Tutor sedang menjelaskan…":"Tanya Tutor"}</button><button className="btn-primary" onClick={next}>Soal Berikutnya →</button></div></div>}
+          {diagnosis.correct&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><button className="btn-primary" onClick={next}>Soal Berikutnya →</button></div>}
         </div>}
       </section>
       <aside className="side-stack">
