@@ -15,9 +15,25 @@ export default function TutorPage({comic,studentModel,messages,onSend,onClearHis
    const el=messagesRef.current;
    if(el) requestAnimationFrame(()=>{el.scrollTop=el.scrollHeight;});
  },[messages?.length]);
- const context=useMemo(()=>({comicTitle:comic?.title||"Belum memilih E-Comic",episodeTitle:episode?.title||"",panelTitle:panel?.title||"",narration:panel?.narration||"",dialogue:panel?.dialogue||"",equation:panel?.equation||"",imageUrl:panel?.imageUrl||"",conceptId,conceptName:concepts[conceptId]?.name||conceptId,studentMastery:studentModel?.concepts?.[conceptId]?.mastery??0,misconceptions:(studentModel?.misconceptions||[]).filter(m=>m.conceptId===conceptId&&!m.resolved),educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school,currentLevel:studentModel?.currentLevel||1}),[comic,episode,panel,conceptId,studentModel,session]);
+ const storyContext=useMemo(()=>{
+   if(!comic?.episodes?.length) return "";
+   return comic.episodes.map((ep,ei)=>[
+     `EPISODE ${ei+1}: ${ep.title||""}`,
+     ep.description?`DESKRIPSI: ${ep.description}`:"",
+     ...(ep.panels||[]).map((p,pi)=>[
+       `Panel ${pi+1}: ${p.title||""}`,
+       p.characters?.length?`Tokoh: ${p.characters.join(", ")}`:"",
+       p.narration?`Narasi: ${p.narration}`:"",
+       p.dialogue?`Dialog: ${p.dialogue}`:"",
+       p.equation?`Persamaan: ${p.equation}`:"",
+       p.conceptIds?.length?`Konsep: ${p.conceptIds.join(", ")}`:""
+     ].filter(Boolean).join(" | "))
+   ].filter(Boolean).join("\n")).join("\n").slice(0,9000);
+ },[comic]);
+ const allCharacters=useMemo(()=>Array.from(new Set((comic?.episodes||[]).flatMap(ep=>(ep.panels||[]).flatMap(p=>Array.isArray(p.characters)?p.characters:[])))),[comic]);
+ const context=useMemo(()=>({comicTitle:comic?.title||"Belum memilih E-Comic",episodeTitle:episode?.title||"",episodeDescription:episode?.description||"",panelTitle:panel?.title||"",narration:panel?.narration||"",dialogue:panel?.dialogue||"",equation:panel?.equation||"",imageUrl:panel?.imageUrl||"",conceptId,conceptName:concepts[conceptId]?.name||conceptId,studentMastery:studentModel?.concepts?.[conceptId]?.mastery??0,misconceptions:(studentModel?.misconceptions||[]).filter(m=>m.conceptId===conceptId&&!m.resolved),educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school,currentLevel:studentModel?.currentLevel||1,characters:panel?.characters?.length?panel.characters:allCharacters,storyContext}),[comic,episode,panel,conceptId,studentModel,session,allCharacters,storyContext]);
  async function send(e){e.preventDefault();if(!input.trim()||busy)return;const msg=input.trim();setInput("");setBusy(true);try{await onSend(msg,context)}finally{setBusy(false)}}
- return <div className="tutor-page"><div className="page-kicker">Contextual AI Tutor</div><h1 className="page-title">Tutor AI</h1><p className="page-desc">Tutor memahami materi yang sedang kamu pelajari. Jika kamu meminta jawaban terus-menerus, tutor akan mengajakmu kembali memahami materi, memberi petunjuk, dan mengajukan pertanyaan penuntun.</p>
+ return <div className="tutor-page"><div className="page-kicker">Contextual AI Tutor</div><h1 className="page-title">Tutor AI</h1><p className="page-desc">Tutor membaca panel aktif sekaligus konteks cerita E-Comic. Kamu bisa ngobrol tentang tokoh, kejadian di cerita, atau konsep matematika yang muncul di dalamnya.</p>
  <div className="card tutor-ready-banner tutor-header-row" style={{marginTop:14}}><div><strong>AI Tutor siap membantu</strong><div className="subtle">Tanyakan panel yang sedang kamu baca, konsep yang belum kamu pahami, atau minta petunjuk untuk menyelesaikan soal.</div></div><button type="button" className="btn tutor-clear-btn" onClick={onClearHistory} disabled={!messages?.some(m=>m.role!=="assistant" || m.text!=="Halo! Saya AI Tutor E-Comic. Kamu bisa bertanya tentang panel, persamaan, atau konsep yang sedang dipelajari.")} title="Hapus riwayat chat"><Trash2 size={15}/> Hapus riwayat</button></div>
  <div className="split" style={{marginTop:18}}><div className="chat"><div className="chat-messages" ref={messagesRef}>{messages.map((m,i)=><div key={i} className={`bubble ${m.role}`}><AIResponse text={m.text}/></div>)}</div><form className="chat-input" onSubmit={send}><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Tanyakan konsep yang sedang kamu baca..."/><button className="btn-primary" disabled={busy}>{busy?"AI…":"Kirim"}</button></form></div><aside className="side-stack"><div className="card"><div className="label">Current Context</div><p><strong>Materi</strong><br/>{context.comicTitle}</p><p><strong>Episode</strong><br/>{context.episodeTitle||"-"}</p><p><strong>Panel</strong><br/>{context.panelTitle||"-"}</p><p><strong>Fokus belajar</strong><br/>{context.conceptName}</p><p><strong>Penguasaan materi</strong><br/>{Math.round(Number(context.studentMastery||0)*100)}%</p>{context.equation&&<p><strong>Persamaan pada panel</strong><br/>{context.equation}</p>}</div></aside></div></div>;
 }

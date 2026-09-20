@@ -61,7 +61,22 @@ export default function ComicReaderPage({comic,studentModel,questions=[],navigat
  function jumpToEpisode(i){setEi(i);setPi(0)}
  async function answerQuiz(i){if(quizDiagnosis||!activeQuestion||!onAnswer)return;setQuizSelected(i);const duration=Math.floor((Date.now()-quizStartedAt.current)/1000);const d=await onAnswer(activeQuestion,i,"reader-quiz",duration);setQuizDiagnosis(d)}
  async function askAI(){setTutorBusy(true);try{await onTutorSend?.(`Jelaskan panel yang sedang saya baca dan hubungkan dengan konsep yang sedang dipelajari. Jika gambar panel tersedia, gunakan gambar sebagai konteks utama. Jika gambar belum tersedia, tetap jawab berdasarkan teks dan konteks panel.`,buildTutorContext())}finally{setTutorBusy(false)}}
- function buildTutorContext(){return {comicTitle:comic.title,episodeTitle:episode.title,panelTitle:panel.title,narration:panel.narration,dialogue:panel.dialogue,equation:panel.equation,imageUrl:panel.imageUrl||"",conceptId,conceptName,studentMastery:mastery,educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school,currentLevel:studentModel?.currentLevel||1}}
+ function buildTutorContext(){
+   const storyContext=(comic?.episodes||[]).map((ep,epi)=>[
+     `EPISODE ${epi+1}: ${ep.title||""}`,
+     ep.description?`DESKRIPSI: ${ep.description}`:"",
+     ...(ep.panels||[]).map((p,pidx)=>[
+       `Panel ${pidx+1}: ${p.title||""}`,
+       p.characters?.length?`Tokoh: ${p.characters.join(", ")}`:"",
+       p.narration?`Narasi: ${p.narration}`:"",
+       p.dialogue?`Dialog: ${p.dialogue}`:"",
+       p.equation?`Persamaan: ${p.equation}`:"",
+       p.conceptIds?.length?`Konsep: ${p.conceptIds.join(", ")}`:""
+     ].filter(Boolean).join(" | "))
+   ].filter(Boolean).join("\n")).join("\n").slice(0,9000);
+   const characters=Array.from(new Set((comic?.episodes||[]).flatMap(ep=>(ep.panels||[]).flatMap(p=>Array.isArray(p.characters)?p.characters:[]))));
+   return {comicTitle:comic.title,episodeTitle:episode.title,episodeDescription:episode.description||"",panelTitle:panel.title,narration:panel.narration,dialogue:panel.dialogue,equation:panel.equation,imageUrl:panel.imageUrl||"",conceptId,conceptName,studentMastery:mastery,educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school,currentLevel:studentModel?.currentLevel||1,characters:panel.characters?.length?panel.characters:characters,storyContext};
+ }
  async function sendTutor(e){e.preventDefault();const msg=tutorInput.trim();if(!msg||tutorBusy)return;setTutorInput("");setTutorBusy(true);try{await onTutorSend?.(msg,buildTutorContext())}finally{setTutorBusy(false)}}
  const content=<div className={`reader-page ${focusMode?"reader-page-focus":""}`}>
   <div className="reader-toolbar"><button className="btn" onClick={()=>navigate("comic-library")}>← Koleksi</button><div className="reader-breadcrumb"><strong>{comic.title}</strong><span>Episode {ei+1} · {episode.title}</span></div><div className="reader-actions"><span className="reader-progress-pill">{overallProgress}% selesai</span><button className="btn" onClick={()=>setFocusMode(v=>!v)}>{focusMode?<Minimize2 size={16}/>:<Maximize2 size={16}/>} {focusMode?"Kembali ke normal":"Mode baca"}</button>{focusMode&&<button className="reader-icon-close" onClick={()=>setFocusMode(false)}><X size={18}/></button>}</div></div>

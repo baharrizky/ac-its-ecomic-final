@@ -19,7 +19,7 @@ function fallbackHints(q){
   ];
 }
 
-export default function PracticePage({ questions = [], studentModel = {}, concepts = [], onAnswer, onAIExplain, onHint }) {
+export default function PracticePage({ questions = [], studentModel = {}, concepts = [], onAnswer, onAIExplain, onHint, onGenerateNextQuestion }) {
   const published = useMemo(()=>questions.filter(q=>q.status !== "Draft" && (q.assessmentType||"practice")==="practice" && Array.isArray(q.options) && q.options.length),[questions]);
   const recommendation = useMemo(()=>chooseNextActivity(studentModel,published),[studentModel,published]);
   const initial = recommendation.questionId ? published.find(q=>q.id===recommendation.questionId) : published[0];
@@ -31,7 +31,12 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
   const [hintsUsed,setHintsUsed]=useState(0);
   const [aiReply,setAiReply]=useState("");
   const [loadingAI,setLoadingAI]=useState(false);
-  const q=published[index];
+  const [failedAttempts,setFailedAttempts]=useState(0);
+  const [nextQuestion,setNextQuestion]=useState(null);
+  const [nextQuestionLoading,setNextQuestionLoading]=useState(false);
+  const [nextQuestionReason,setNextQuestionReason]=useState("");
+  const [generatedQueue,setGeneratedQueue]=useState([]);
+  const q=generatedQueue.length ? generatedQueue[generatedQueue.length-1] : published[index];
   const conceptName=concepts.find(c=>c.id===q?.conceptId)?.name||q?.conceptId||"Konsep";
   const hints=Array.isArray(q?.hints)&&q.hints.some(Boolean) ? q.hints.filter(Boolean).slice(0,3) : fallbackHints(q);
 
@@ -43,6 +48,29 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
     const d=await onAnswer?.(q,i,"practice",0,hintsUsed);
     setDiagnosis(d||null);
     setAiReply("");
+    if(d?.correct){
+      setNextQuestion(null);
+      setNextQuestionReason("");
+      setNextQuestionLoading(true);
+      // Generate the next item from AI after a correct answer. It runs in the
+      // background so the student can immediately see the feedback.
+      Promise.resolve(onGenerateNextQuestion?.({
+        question:q,
+        studentModel,
+        concepts,
+        publishedQuestions:published,
+        hintsUsed,
+        failedAttempts,
+        recentAttempts:[{questionId:q.id,conceptId:q.conceptId,correct:true,hintsUsed,level:Number(q.level??q.difficulty??1)}]
+      })).then(result=>{
+        if(result?.question) {
+          setNextQuestion(result.question);
+          setNextQuestionReason(result.reason||"Soal berikut dibuat AI berdasarkan perkembanganmu.");
+        }
+      }).catch(()=>{}).finally(()=>setNextQuestionLoading(false));
+    } else {
+      setFailedAttempts(v=>v+1);
+    }
   }
   async function useHint(){
     if(!diagnosis || diagnosis.correct || hintLevel>=3) return;
@@ -60,28 +88,37 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
     setAiReply("");
   }
   async function askAI(){
-    if(!diagnosis?.correct || !onAIExplain) return;
+    if(failedAttempts < 3 || !onAIExplain) return;
     setLoadingAI(true);
     try {
       const r=await onAIExplain({
-        message:`Siswa sudah mencoba dan menjawab benar. Jelaskan mengapa jawabannya benar, hubungkan dengan konsep E-Comic, lalu berikan satu pertanyaan reflektif singkat tanpa membocorkan soal berikutnya.`,
-        context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName,hintsUsed}
+        message:`Aku sudah mencoba soal ini ${failedAttempts} kali dan masih salah. Tolong jadi tutor: bantu aku memahami letak kesalahanku dari jawaban terakhir, hubungkan dengan materi/komik yang relevan, lalu berikan satu pertanyaan penuntun. Jangan langsung memberikan jawaban akhir.`,
+        context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:selected==null?null:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName,hintsUsed,failedAttempts,practiceMode:true}
       });
-      setAiReply(r?.reply || "Belum ada penjelasan AI.");
+      setAiReply(r?.reply || "Coba kita bedah langkahmu dari awal. Bagian mana yang menurutmu paling membingungkan?");
     } finally { setLoadingAI(false); }
   }
   function next(){
+    if(nextQuestion){
+      const nq=nextQuestion;
+      setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);setFailedAttempts(0);
+      setNextQuestion(null);setNextQuestionReason("");
+      // Keep AI-generated questions local to this practice session.
+      setIndex(0);
+      setGeneratedQueue(prev=>[...prev,nq]);
+      return;
+    }
     const rec=diagnosis?.recommendation;
     if(rec?.questionId && rec.questionId!==q.id){
       const nextIndex=published.findIndex(item=>item.id===rec.questionId);
-      if(nextIndex>=0){setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);setIndex(nextIndex);return;}
+      if(nextIndex>=0){setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);setFailedAttempts(0);setIndex(nextIndex);return;}
     }
     const currentLevel=Number(q?.level??q?.difficulty??1);
     const targetLevel=Math.max(1,Math.min(5,currentLevel + (hintsUsed===0 ? 1 : hintsUsed<=2 ? 0 : -1)));
     const sameConcept=published.filter(item=>item.conceptId===q.conceptId && item.id!==q.id);
     const candidates=(sameConcept.length?sameConcept:published.filter(item=>item.id!==q.id)).slice().sort((a,b)=>Math.abs(Number(a.level??a.difficulty??1)-targetLevel)-Math.abs(Number(b.level??b.difficulty??1)-targetLevel));
     const fallback=candidates[0];
-    setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);
+    setSelected(null);setDiagnosis(null);setAiReply("");setHintLevel(0);setHintsUsed(0);setFailedAttempts(0);
     if(fallback){setIndex(published.findIndex(item=>item.id===fallback.id));}else if(index>=published.length-1){setIndex(0);}else{setIndex(v=>v+1);}
   }
 
@@ -115,7 +152,7 @@ export default function PracticePage({ questions = [], studentModel = {}, concep
             </div>
             {hintLevel>0&&<div className="ai-feedback"><strong>Hint {hintLevel}</strong><p>{aiReply || hints[Math.min(hintLevel-1,hints.length-1)]}</p></div>}
           </div>}
-          {diagnosis.correct&&<div style={{marginTop:12}}><div className="ai-feedback"><strong>Rekomendasi berikutnya</strong><p>{diagnosis.recommendation?.reason || (hintsUsed===0 ? "Naik satu tingkat karena kamu menjawab tanpa hint." : hintsUsed<=2 ? "Tetap di tingkat yang sama untuk memastikan pemahaman." : "Turunkan sedikit tingkat kesulitan untuk memperkuat konsep sebelum naik lagi.")}</p><div className="subtle">Target level: {diagnosis.recommendation?.targetLevel || Math.max(1,Math.min(5,Number(q?.level??q?.difficulty??1)+(hintsUsed===0?1:hintsUsed<=2?0:-1)))}</div></div><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><button className="btn-primary" onClick={next}>Soal Berikutnya →</button>{!aiReply&&<button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"AI sedang menjelaskan…":"Tanya Tutor"}</button>}</div></div>}
+          {diagnosis.correct&&<div style={{marginTop:12}}><div className="ai-feedback"><strong>Soal berikut dibuat AI</strong><p>{nextQuestionReason || "AI sedang menyiapkan soal yang sesuai dengan kemampuanmu…"}</p>{nextQuestion&&<div className="subtle">Level berikut: {nextQuestion.level||"-"} · Konsep: {nextQuestion.conceptId||q.conceptId}</div>}</div><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><button className="btn-primary" onClick={next} disabled={nextQuestionLoading}>{nextQuestionLoading?"AI sedang membuat soal…":"Soal Berikutnya →"}</button></div></div>}
         </div>}
       </section>
       <aside className="side-stack">

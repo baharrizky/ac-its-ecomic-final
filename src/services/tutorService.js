@@ -72,7 +72,10 @@ async function prepareTutorPayload({ message, context, history }) {
       conceptId: context?.conceptId || "",
       conceptName: context?.conceptName || "",
       educationLevel: context?.educationLevel || "",
-      grade: context?.grade || ""
+      grade: context?.grade || "",
+      characters: Array.isArray(context?.characters) ? context.characters.slice(0, 20) : [],
+      storyContext: String(context?.storyContext || "").slice(0, 9000),
+      episodeDescription: String(context?.episodeDescription || "").slice(0, 1200)
     },
     history: (Array.isArray(history) ? history : []).slice(-4).map(m => ({
       role: m?.role === "user" ? "user" : "assistant",
@@ -143,13 +146,15 @@ export async function getTutorReply({ message, context, history }) {
       providerStatus: error?.providerStatus,
       message: error?.message
     });
-    const panel = context?.panelTitle ? ` pada ${context.panelTitle}` : "";
-    const concept = context?.conceptName || "konsep yang sedang dipelajari";
-    const equation = context?.equation ? ` Persamaan yang tersedia: ${context.equation}.` : "";
+    const panel = context?.panelTitle ? ` di ${context.panelTitle}` : "";
+    const concept = context?.conceptName || "konsep yang sedang kamu pelajari";
+    const characters = Array.isArray(context?.characters) && context.characters.length
+      ? ` Tokoh yang terlibat: ${context.characters.join(", ")}.`
+      : "";
     return {
-      reply: `Mari kita tetap gunakan konteks belajar${panel}. Fokus kita adalah ${concept}.${equation} Coba jelaskan bagian mana yang membingungkan; kita pecah menjadi langkah kecil.`,
+      reply: `Hehe, kita bahas bareng ya 😄 Aku lagi fokus${panel} dan konsep ${concept}.${characters} Bagian mana yang paling bikin kamu penasaran? Ceritakan saja, nanti kita kupas dari panelnya pelan-pelan.`,
       ai: false,
-      unavailable: false,
+      unavailable: true,
       fallback: true,
       aiError: error?.message || "AI unavailable",
       code: error?.code || "AI_UNAVAILABLE",
@@ -184,13 +189,32 @@ export async function getAIHint({ question, hintIndex = 1, conceptId, conceptNam
 }
 
 export async function correctAnswerWithAI({ question, selectedAnswer, correctAnswer, baselineDiagnosis, context = {} }) {
-  try { return await callEndpoint({ mode:"correct", question, selectedAnswer, correctAnswer, baselineDiagnosis, context }, { timeoutMs: 14000 }); }
+  try { return await callEndpoint({ mode:"correct", question, selectedAnswer, correctAnswer, baselineDiagnosis, context }, { timeoutMs: 9000 }); }
   catch (error) { console.error("AI correction failed", error); return { ...baselineDiagnosis, ai:false, unavailable:true, aiError:error?.message || "AI unavailable", code:error?.code || "AI_UNAVAILABLE" }; }
 }
 
 export async function recommendNextQuestion({ studentModel, questions, recentAttempts = [] }) {
   try { return await callEndpoint({ mode:"recommend", studentModel, questions, recentAttempts }, { timeoutMs: 12000 }); }
   catch (error) { console.error("AI recommendation failed", error); return { ai:false, unavailable:true, questionId:null, reason:"Latihan berikut dipilih berdasarkan perkembangan belajarmu." }; }
+}
+
+export async function generateNextQuestion({ studentModel, currentQuestion, concept, eligibleConcepts = [], recentAttempts = [], hintsUsed = 0, failedAttempts = 0, comicContext = {} }) {
+  try {
+    return await callEndpoint({
+      mode:"generate_next",
+      studentModel,
+      currentQuestion,
+      concept,
+      eligibleConcepts,
+      recentAttempts,
+      hintsUsed,
+      failedAttempts,
+      comicContext
+    }, { timeoutMs: 12000 });
+  } catch (error) {
+    console.error("AI next-question generation failed", error);
+    return { ai:false, unavailable:true, question:null, reason:"Soal berikut akan dipilih dari latihan yang tersedia." };
+  }
 }
 
 export async function getTeacherRecommendation({ student, studentModel, attempts = [], events = [] }) {

@@ -48,6 +48,9 @@ function buildContext(context = {}) {
     grade: clampText(context.grade, 50),
     school: clampText(context.school, 180),
     currentLevel: context.currentLevel ?? null,
+    characters: Array.isArray(context.characters) ? context.characters.slice(0, 20).map(x => clampText(x, 80)) : [],
+    storyContext: clampText(context.storyContext, 9000),
+    episodeDescription: clampText(context.episodeDescription, 1200),
     imageUrl: clampText(context.imageUrl, 2000)
   };
 }
@@ -56,26 +59,27 @@ function buildTutorPrompt(message, context, history = []) {
   const compact = buildContext(context);
   const recent = (history || [])
     .filter(item => item && (item.role === "user" || item.role === "assistant"))
-    .slice(-4)
+    .slice(-6)
     .map(item => ({ role: item.role, text: clampText(item.text, 700) }));
 
-  // Keep the multimodal tutor prompt deliberately small. The panel image is
-  // the primary visual source; metadata is supporting context only.
   return [
-    "Kamu adalah AI Tutor matematika untuk siswa Indonesia.",
-    "Jawab sebagai tutor yang hangat, singkat, jelas, dan interaktif.",
-    "Jika ada gambar panel, AMATI GAMBAR TERLEBIH DAHULU. Gunakan gambar sebagai konteks utama untuk hal-hal visual.",
-    "Jika gambar tidak tersedia, tetap jawab pertanyaan siswa menggunakan konteks materi yang tersedia. Jangan membalas hanya dengan pesan bahwa gambar gagal dibaca.",
-    "Jangan menganggap metadata konsep sebagai sesuatu yang pasti terlihat pada gambar.",
-    "Jika panel hanya pengantar/cerita, katakan bahwa panel itu berfungsi sebagai konteks dan jangan memaksakan materi matematika ke dalamnya.",
-    "Jika siswa meminta jawaban soal secara langsung, beri satu petunjuk dan satu pertanyaan penuntun sebelum jawaban akhir.",
-    "Jika siswa tampak belum menguasai prasyarat, arahkan siswa membaca bagian materi atau panel yang relevan yang memang tercantum dalam konteks. Sebutkan judul bagian secara spesifik bila tersedia; jangan mengarang nomor halaman atau bagian yang tidak ada.",
-    "Jika pertanyaan dapat dijawab dari konsep yang sedang dipelajari, tetap hubungkan jawaban dengan konsep tersebut dan, bila perlu, arahkan kembali ke bagian materi yang relevan sebelum memberi latihan berikutnya.",
-    "Jangan gunakan LaTeX mentah. Gunakan x², a/b, 2 ÷ 3, dan notasi yang mudah dibaca.",
-    "Jangan mengarang detail.",
-    `KONTEKS: ${JSON.stringify(compact)}`,
-    `RIWAYAT: ${JSON.stringify(recent)}`,
-    `PERTANYAAN: ${clampText(message, 2000)}`
+    "Kamu adalah teman belajar sekaligus AI Tutor matematika di AC-ITS E-Comic untuk siswa Indonesia.",
+    "Gaya bicaramu santai, hangat, aktif, dan membuat siswa ingin melanjutkan percakapan. Jangan terdengar seperti buku teks atau chatbot layanan pelanggan.",
+    "Mulai dari inti pertanyaan siswa. Jika cocok, gunakan nama tokoh, kejadian, atau situasi dari komik agar jawaban terasa seperti bagian dari cerita.",
+    "Pahami komik sebagai satu cerita, bukan hanya satu panel. STORY CONTEXT berisi urutan episode, tokoh, narasi, dialog, persamaan, dan konsep yang sudah ditulis guru.",
+    "Untuk pertanyaan tentang isi komik, tokoh, hubungan antaradegan, atau alur cerita, gunakan STORY CONTEXT dan gambar panel aktif. Jangan mengarang karakter, kejadian, atau sifat tokoh yang tidak didukung.",
+    "Untuk pertanyaan matematika, hubungkan penjelasan dengan adegan atau dialog yang relevan jika memang ada. Jangan memaksakan hubungan yang tidak ada.",
+    "Jika ada gambar panel, amati gambar terlebih dahulu. Gunakan gambar untuk membaca visual, teks pada gambar, ekspresi/tindakan tokoh, angka, simbol, dan objek yang terlihat.",
+    "Jika siswa bertanya umum seperti 'apa yang ada di komik?', jawab berdasarkan cerita yang benar-benar tersedia dan sebutkan tokoh/kejadian yang relevan.",
+    "Jika siswa bingung, ajukan pertanyaan kecil yang mudah dijawab sebelum memberi penjelasan panjang. Gunakan contoh singkat.",
+    "Jika siswa meminta jawaban soal secara langsung, jangan langsung membocorkan jawaban. Beri petunjuk dan pertanyaan penuntun.",
+    "Jangan mengulang kalimat generik seperti 'Mari kita tetap gunakan konteks belajar...' atau 'Coba jelaskan bagian mana yang membingungkan' jika kamu bisa langsung merespons pertanyaan siswa.",
+    "Jangan mengatakan tutor tidak tersedia. Jika informasi tertentu memang tidak ada di komik, katakan dengan jujur lalu bantu dari informasi yang tersedia.",
+    "Gunakan Bahasa Indonesia natural. Boleh memakai emoji secukupnya, tetapi jangan berlebihan.",
+    "Gunakan x², aⁿ, a/b, dan notasi matematika yang mudah dibaca; jangan keluarkan LaTeX mentah.",
+    `KONTEKS PEMBELAJARAN: ${JSON.stringify(compact)}`,
+    `RIWAYAT PERCAKAPAN: ${JSON.stringify(recent)}`,
+    `PERTANYAAN SISWA: ${clampText(message, 2000)}`
   ].join("\n\n");
 }
 
@@ -86,9 +90,12 @@ function buildCorrectionPrompt(payload) {
     "Kamu adalah AI evaluator pembelajaran matematika untuk AC-ITS E-Comic.",
     "Evaluasi jawaban siswa berdasarkan soal, pilihan jawaban, jawaban benar, konteks konsep, dan diagnosis awal.",
     "Tujuan evaluasi adalah memperbarui student model, menemukan miskonsepsi, dan menentukan tindak lanjut belajar.",
+    "Miskonsepsi HARUS ditentukan oleh AI berdasarkan pola jawaban siswa, konsep, jawaban benar, dan konteks soal. Jangan hanya menyalin diagnosis awal sistem.",
+    "Bedakan miskonsepsi konseptual dari kesalahan hitung atau salah klik. Jika bukti belum cukup untuk menyimpulkan miskonsepsi, gunakan misconceptionTag null.",
+    "Jika jawaban salah, jelaskan secara spesifik apa pola berpikir yang keliru dan bagaimana memperbaikinya tanpa langsung membocorkan seluruh jawaban.",
     "Jangan hanya mengatakan benar/salah. Jelaskan konsep secara singkat dan berikan langkah berikutnya.",
     "Jika perlu menulis persamaan, gunakan notasi Unicode yang mudah dibaca, bukan LaTeX mentah.",
-    "Jika siswa salah, gunakan misconceptionTag UPPER_SNAKE_CASE yang singkat. Jika benar, misconceptionTag harus null.",
+    "Jika siswa salah dan memang ada miskonsepsi, gunakan misconceptionTag UPPER_SNAKE_CASE yang singkat dan konsisten untuk pola yang sama. Jika benar atau bukti belum cukup, misconceptionTag harus null.",
     "Balas HANYA dengan JSON valid tanpa markdown dengan struktur: {\"correct\":boolean,\"misconceptionTag\":string|null,\"confidence\":number,\"explanation\":string,\"hint\":string,\"nextStep\":string}",
     `KONTEKS:\n${JSON.stringify(context, null, 2)}`,
     `SOAL:\n${JSON.stringify(q, null, 2)}`,
@@ -125,12 +132,47 @@ function buildRecommendationPrompt(payload) {
     "Kamu adalah adaptive learning engine untuk AC-ITS E-Comic.",
     "Tentukan satu soal berikutnya yang paling sesuai dengan kemampuan siswa.",
     "Guru tetap menentukan bank soal dan konsep; AI hanya memilih urutan, tingkat kesulitan, dan alasan berdasarkan data siswa.",
-    "Prioritaskan prasyarat yang belum dikuasai, konsep dengan mastery rendah, miskonsepsi aktif, dan kenaikan level secara bertahap.",
-    "Jangan memilih soal Draft. Jika data kemampuan minim, pilih level 1 dari konsep pertama yang relevan.",
+    "Hanya gunakan konsep yang sudah pernah dipelajari atau secara eksplisit diberikan sebagai eligible. Jangan merekomendasikan konsep yang belum dilalui.",
+    "Prioritaskan konsep aktif yang mastery-nya belum optimal, miskonsepsi aktif, dan kenaikan level secara bertahap.",
+    "Jangan memilih soal Draft. Jika data kemampuan minim, pilih soal dari konsep aktif yang sudah dipelajari.",
     "Balas HANYA JSON valid: {\"questionId\":string|null,\"conceptId\":string|null,\"targetLevel\":number,\"action\":\"remedial\"|\"practice\"|\"challenge\",\"reason\":string}",
     `STUDENT MODEL:\n${JSON.stringify(model, null, 2)}`,
     `RECENT ATTEMPTS:\n${JSON.stringify(attempts, null, 2)}`,
     `QUESTION BANK:\n${JSON.stringify(questions, null, 2)}`
+  ].join("\n\n");
+}
+
+function buildGenerateNextQuestionPrompt(payload) {
+  const model = payload?.studentModel || {};
+  const current = payload?.currentQuestion || {};
+  const concept = payload?.concept || {};
+  const eligible = Array.isArray(payload?.eligibleConcepts) ? payload.eligibleConcepts.slice(0, 20) : [];
+  const attempts = Array.isArray(payload?.recentAttempts) ? payload.recentAttempts.slice(0, 8) : [];
+  const hintsUsed = Number(payload?.hintsUsed || 0);
+  const failedAttempts = Number(payload?.failedAttempts || 0);
+  const comic = payload?.comicContext || {};
+
+  return [
+    "Kamu adalah AI pembuat soal adaptif untuk AC-ITS E-Comic.",
+    "Buat SATU soal latihan matematika baru setelah siswa menyelesaikan soal sebelumnya.",
+    "Soal harus benar-benar dibuat oleh AI, bukan sekadar memilih questionId dari bank soal.",
+    "Soal wajib tetap berada pada konsep yang sedang dipelajari atau konsep berikutnya yang sudah dinyatakan eligible. Jangan melompati konsep yang belum dipelajari.",
+    "Gunakan konteks komik jika tersedia agar soal terasa terkait cerita, tetapi jangan mengubah konteks cerita menjadi soal yang tidak masuk akal.",
+    "Tingkat kesulitan harus bertahap: tanpa hint dan tanpa kegagalan → naik sedikit; 1–2 hint → tetap/naik sangat kecil; 3 hint atau banyak kegagalan → pertahankan atau turunkan sedikit untuk penguatan.",
+    "Jangan mengulang soal sebelumnya. Jangan membuat soal yang jawabannya ambigu.",
+    "Untuk siswa SMA, gunakan pilihan ganda 4 opsi dan tepat satu jawaban benar.",
+    "Balas HANYA JSON valid dengan struktur:",
+    "{\"question\":{\"id\":string,\"question\":string,\"options\":[string,string,string,string],\"answer\":number,\"explanation\":string,\"equation\":string,\"conceptId\":string,\"level\":number,\"assessmentType\":\"practice\"},\"reason\":string,\"targetLevel\":number}",
+    "answer adalah indeks 0-3 dari jawaban benar.",
+    "equation boleh kosong jika tidak diperlukan.",
+    `STUDENT MODEL:\n${JSON.stringify(model)}`,
+    `SOAL SEBELUMNYA:\n${JSON.stringify(current)}`,
+    `KONSEP SAAT INI:\n${JSON.stringify(concept)}`,
+    `KONSEP YANG BOLEH DIGUNAKAN:\n${JSON.stringify(eligible)}`,
+    `HINT DIGUNAKAN: ${hintsUsed}`,
+    `JUMLAH GAGAL PADA SOAL SEBELUMNYA: ${failedAttempts}`,
+    `ATTEMPTS TERBARU:\n${JSON.stringify(attempts)}`,
+    `KONTEKS KOMIK:\n${JSON.stringify(comic)}`
   ].join("\n\n");
 }
 
@@ -361,14 +403,41 @@ export default async function handler(req, res) {
     }
 
     if (mode === "correct") {
-      const response = await callAI(buildCorrectionPrompt(body), { json: true, thinkingLevel: process.env.GEMINI_CORRECTION_THINKING || "medium", maxOutputTokens: 900, timeoutMs: 12000, maxRetries: 0 });
+      const response = await callAI(buildCorrectionPrompt(body), { json: true, thinkingLevel: process.env.GEMINI_CORRECTION_THINKING || "low", maxOutputTokens: 600, timeoutMs: 9000, maxRetries: 0 });
       const parsed = parseJsonObject(response.text);
       if (!parsed) throw Object.assign(new Error("AI correction mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
       return json(res, 200, { ...normalizeCorrection(parsed, body.baselineDiagnosis || {}), ai: true });
     }
 
+    if (mode === "generate_next") {
+      const response = await callAI(buildGenerateNextQuestionPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 520, timeoutMs: 11000, maxRetries: 0 });
+      const parsed = parseJsonObject(response.text);
+      if (!parsed?.question || !Array.isArray(parsed.question.options) || parsed.question.options.length !== 4) {
+        throw Object.assign(new Error("AI next question mengembalikan format tidak valid."), { code: "AI_INVALID_QUESTION" });
+      }
+      const q = parsed.question;
+      const answer = Math.max(0, Math.min(3, Number(q.answer ?? 0)));
+      return json(res, 200, {
+        question: {
+          id: String(q.id || `ai-q-${Date.now()}`),
+          question: String(q.question || ""),
+          options: q.options.map(x => String(x)),
+          answer,
+          explanation: String(q.explanation || ""),
+          equation: String(q.equation || ""),
+          conceptId: String(q.conceptId || body?.concept?.id || ""),
+          level: Math.max(1, Math.min(5, Number(q.level || parsed.targetLevel || 1))),
+          assessmentType: "practice",
+          generatedByAI: true
+        },
+        reason: String(parsed.reason || "Soal berikut dibuat berdasarkan perkembangan belajarmu."),
+        targetLevel: Math.max(1, Math.min(5, Number(parsed.targetLevel || q.level || 1))),
+        ai: true
+      });
+    }
+
     if (mode === "recommend") {
-      const response = await callAI(buildRecommendationPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 650, timeoutMs: 10000, maxRetries: 0 });
+      const response = await callAI(buildRecommendationPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 500, timeoutMs: 9000, maxRetries: 0 });
       const parsed = parseJsonObject(response.text);
       if (!parsed) throw Object.assign(new Error("AI recommendation mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
       return json(res, 200, { questionId: parsed.questionId || null, conceptId: parsed.conceptId || null, targetLevel: Number(parsed.targetLevel || 1), action: parsed.action || "practice", reason: String(parsed.reason || "Latihan dipilih berdasarkan perkembangan belajar siswa."), ai: true });
@@ -393,37 +462,55 @@ export default async function handler(req, res) {
     // keeps multimodal tutoring independent from the heavier correction /
     // recommendation flows and avoids Gemini 3 thinking/output edge cases.
     const tutorModel = process.env.GEMINI_TUTOR_MODEL || "gemini-2.5-flash";
+    const tutorPrompt = buildTutorPrompt(message, tutorContext, history);
     let response;
     try {
-      response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
+      // Primary multimodal attempt.
+      response = await callGemini(tutorPrompt, {
         model: tutorModel,
         imageData: body.imageData || "",
         imageMime: body.imageMime || "",
         imageUrl: tutorContext.imageUrl,
-        // Image is preferred context, never a hard requirement.
         imageExpected: false,
-        maxOutputTokens: 800
+        maxOutputTokens: 800,
+        timeoutMs: 14000,
+        maxRetries: 1
       });
     } catch (primaryError) {
-      // One deterministic fallback to the configured primary model. No retry
-      // storm: the endpoint either returns a reply or a concrete diagnostic.
-      if (DEFAULT_MODEL !== tutorModel) {
-        response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
+      // If the visual request is the problem, retry with the story/text
+      // context first. The tutor should not disappear just because a panel
+      // image could not be attached.
+      try {
+        response = await callAI(tutorPrompt, {
           model: DEFAULT_MODEL,
-          imageData: body.imageData || "",
-          imageMime: body.imageMime || "",
-          imageUrl: tutorContext.imageUrl,
-          // Image is preferred context, never a hard requirement.
-        imageExpected: false,
+          imageData: "",
+          imageMime: "",
+          imageUrl: "",
+          imageExpected: false,
           maxOutputTokens: 800,
           thinkingLevel: /^gemini-3\./i.test(DEFAULT_MODEL) ? "low" : undefined,
           timeoutMs: 12000,
           maxRetries: 0
         });
-      } else {
-        throw primaryError;
+      } catch (secondaryError) {
+        // Last deterministic fallback for temporary provider/model issues.
+        if (FALLBACK_MODEL !== DEFAULT_MODEL) {
+          response = await callGemini(tutorPrompt, {
+            model: FALLBACK_MODEL,
+            imageData: "",
+            imageMime: "",
+            imageUrl: "",
+            imageExpected: false,
+            maxOutputTokens: 700,
+            timeoutMs: 10000,
+            maxRetries: 0
+          });
+        } else {
+          throw secondaryError || primaryError;
+        }
       }
     }
+    return json(res, 200, { reply: response.text, ai: true, meta: { ...response.meta, tutorModel } });
     return json(res, 200, { reply: response.text, ai: true, meta: { ...response.meta, tutorModel } });
   } catch (error) {
     console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });
