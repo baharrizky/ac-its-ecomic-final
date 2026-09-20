@@ -158,7 +158,11 @@ export async function findOpenClass({ school, educationLevel, grade, rombel }) {
       // Hanya query kelas yang pendaftarannya terbuka. Setelah itu sekolah,
       // jenjang, tingkat, dan rombel dicocokkan di client dengan normalisasi.
       // Ini menghindari mismatch "SMAN 5" vs "SMA Negeri 5" dan "X 1" vs "1".
-      const snap = await getDocs(query(collection(db, CLASSES), where("enrollmentOpen", "==", true)));
+      const snap = await getDocs(query(
+        collection(db, CLASSES),
+        where("active", "==", true),
+        where("enrollmentOpen", "==", true)
+      ));
       const rows = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       const match = matches(rows);
       if (match) return match;
