@@ -98,6 +98,25 @@ function buildCorrectionPrompt(payload) {
   ].join("\n\n");
 }
 
+function buildHintPrompt(payload) {
+  const q = payload?.question || {};
+  const hintIndex = Math.max(1, Math.min(3, Number(payload?.hintIndex || 1)));
+  return [
+    "Kamu adalah AI Hint Tutor untuk latihan matematika AC-ITS E-Comic.",
+    "Berikan HANYA satu hint bertahap, bukan jawaban akhir.",
+    "Hint harus membantu siswa bergerak satu langkah dan harus sesuai dengan soal serta konsep yang diberikan.",
+    hintIndex === 1 ? "Level 1: berikan arah/hal yang perlu diperhatikan." : hintIndex === 2 ? "Level 2: berikan konsep atau hubungan yang harus digunakan." : "Level 3: berikan langkah penyelesaian berikutnya tanpa menyelesaikan seluruh soal.",
+    "Jika ada miskonsepsi, arahkan secara spesifik agar siswa memperbaiki kesalahannya.",
+    "Gunakan bahasa Indonesia yang singkat dan jelas. Jangan mengatakan 'baca ulang materi' tanpa petunjuk konkret.",
+    "Balas JSON valid: {\"hint\":string,\"focus\":string}",
+    `SOAL:\n${JSON.stringify(q, null, 2)}`,
+    `KONSEP: ${String(payload?.conceptName || payload?.conceptId || "")}`,
+    `MASTERY: ${Number(payload?.studentMastery || 0)}`,
+    `MISKONSEPSI: ${String(payload?.misconceptionTag || "")}`,
+    `KONTEKS: ${JSON.stringify(payload?.context || {})}`
+  ].join("\n\n");
+}
+
 function buildRecommendationPrompt(payload) {
   const model = payload?.studentModel || {};
   const questions = Array.isArray(payload?.questions) ? payload.questions.slice(0, 80) : [];
@@ -258,21 +277,22 @@ async function callGemini(prompt, options = {}) {
   if (options.systemInstruction) payload.systemInstruction = { parts: [{ text: options.systemInstruction }] };
 
   let lastError = null;
-  for (let attempt = 0; attempt <= DEFAULT_RETRIES; attempt += 1) {
+  const maxRetries = Number.isFinite(Number(options.maxRetries)) ? Math.max(0, Math.min(2, Number(options.maxRetries))) : DEFAULT_RETRIES;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const started = Date.now();
     try {
       const response = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify(payload)
-      }, DEFAULT_TIMEOUT_MS);
+      }, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
       const data = await response.json().catch(() => ({}));
       const latencyMs = Date.now() - started;
       if (!response.ok) {
         const e = new Error(data?.error?.message || `Gemini request gagal (${response.status})`);
         e.status = response.status; e.provider = "gemini"; e.latencyMs = latencyMs;
         lastError = e;
-        if (!isRetryable(response.status) || attempt >= DEFAULT_RETRIES) throw e;
+        if (!isRetryable(response.status) || attempt >= maxRetries) throw e;
         await new Promise(r => setTimeout(r, backoffMs(attempt, response.headers.get("retry-after"))));
         continue;
       }
@@ -283,7 +303,7 @@ async function callGemini(prompt, options = {}) {
         const e = new Error(`Gemini tidak mengembalikan teks (finishReason: ${finishReason}${blockReason ? `, ${blockReason}` : ""}).`);
         e.code = "AI_EMPTY_RESPONSE"; e.provider = "gemini"; e.latencyMs = latencyMs;
         lastError = e;
-        if (attempt >= DEFAULT_RETRIES) throw e;
+        if (attempt >= maxRetries) throw e;
         await new Promise(r => setTimeout(r, backoffMs(attempt)));
         continue;
       }
@@ -291,7 +311,7 @@ async function callGemini(prompt, options = {}) {
     } catch (e) {
       lastError = e;
       if (e?.name === "AbortError") e.code = "AI_TIMEOUT";
-      if (!(e?.name === "AbortError" || isRetryable(e?.status)) || attempt >= DEFAULT_RETRIES) throw e;
+      if (!(e?.name === "AbortError" || isRetryable(e?.status)) || attempt >= maxRetries) throw e;
       await new Promise(r => setTimeout(r, backoffMs(attempt)));
     }
   }
@@ -333,15 +353,22 @@ export default async function handler(req, res) {
   const mode = body.mode || "tutor";
   const startedAt = Date.now();
   try {
+    if (mode === "hint") {
+      const response = await callAI(buildHintPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 280, timeoutMs: 12000, maxRetries: 0 });
+      const parsed = parseJsonObject(response.text);
+      if (!parsed) throw Object.assign(new Error("AI hint mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
+      return json(res, 200, { reply: String(parsed.hint || ""), focus: String(parsed.focus || ""), hintIndex: Math.max(1, Math.min(3, Number(body.hintIndex || 1))), ai: true, meta: response.meta });
+    }
+
     if (mode === "correct") {
-      const response = await callAI(buildCorrectionPrompt(body), { json: true, thinkingLevel: process.env.GEMINI_CORRECTION_THINKING || "medium", maxOutputTokens: 1200 });
+      const response = await callAI(buildCorrectionPrompt(body), { json: true, thinkingLevel: process.env.GEMINI_CORRECTION_THINKING || "medium", maxOutputTokens: 900, timeoutMs: 12000, maxRetries: 0 });
       const parsed = parseJsonObject(response.text);
       if (!parsed) throw Object.assign(new Error("AI correction mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
       return json(res, 200, { ...normalizeCorrection(parsed, body.baselineDiagnosis || {}), ai: true });
     }
 
     if (mode === "recommend") {
-      const response = await callAI(buildRecommendationPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 900 });
+      const response = await callAI(buildRecommendationPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 650, timeoutMs: 10000, maxRetries: 0 });
       const parsed = parseJsonObject(response.text);
       if (!parsed) throw Object.assign(new Error("AI recommendation mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
       return json(res, 200, { questionId: parsed.questionId || null, conceptId: parsed.conceptId || null, targetLevel: Number(parsed.targetLevel || 1), action: parsed.action || "practice", reason: String(parsed.reason || "Latihan dipilih berdasarkan perkembangan belajar siswa."), ai: true });
@@ -389,7 +416,9 @@ export default async function handler(req, res) {
           // Image is preferred context, never a hard requirement.
         imageExpected: false,
           maxOutputTokens: 800,
-          thinkingLevel: /^gemini-3\./i.test(DEFAULT_MODEL) ? "low" : undefined
+          thinkingLevel: /^gemini-3\./i.test(DEFAULT_MODEL) ? "low" : undefined,
+          timeoutMs: 12000,
+          maxRetries: 0
         });
       } else {
         throw primaryError;

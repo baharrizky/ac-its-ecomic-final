@@ -1,6 +1,23 @@
 import React from "react";
 import Badge from "../common/Badge";
 import MediaImage from "../media/MediaImage";
+import katex from "katex";
+import "katex/dist/katex.min.css";
+
+function renderDescription(value){
+ const text=String(value||"");
+ const parts=text.split(/([A-Za-z0-9]+\^[A-Za-z0-9]+|[A-Za-z0-9]+\/[A-Za-z0-9]+)/g);
+ return parts.map((part,i)=>{
+   if(/^[A-Za-z0-9]+\^[A-Za-z0-9]+$/.test(part)){
+     try{return <span key={i} dangerouslySetInnerHTML={{__html:katex.renderToString(part,{displayMode:false,throwOnError:false})}}/>}catch{}
+   }
+   if(/^[A-Za-z0-9]+\/[A-Za-z0-9]+$/.test(part)){
+     const [a,b]=part.split("/");
+     try{return <span key={i} dangerouslySetInnerHTML={{__html:katex.renderToString(`\\frac{${a}}{${b}}`,{displayMode:false,throwOnError:false})}}/>}catch{}
+   }
+   return <React.Fragment key={i}>{part}</React.Fragment>;
+ });
+}
 
 export default function ComicCard({
   comic,
@@ -68,7 +85,7 @@ export default function ComicCard({
         </div>
 
         <div className="comic-desc">
-          {comic?.description || ""}
+          {renderDescription(comic?.description)}
         </div>
 
         <div className="tag-row">

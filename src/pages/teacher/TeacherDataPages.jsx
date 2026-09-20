@@ -14,6 +14,8 @@ function ClassScope({teacherClasses=[],onChange}){
  return <div className="card" style={{marginBottom:16}}><div className="register-grid"><div><label className="label">Sekolah</label><select value={school} onChange={e=>{setSchool(e.target.value);setGrade("");setRombel("")}}><option value="">Semua sekolah</option>{schools.map(x=><option key={x}>{x}</option>)}</select></div><div><label className="label">Kelas</label><select value={grade} onChange={e=>{setGrade(e.target.value);setRombel("")}}><option value="">Semua kelas</option>{grades.map(x=><option key={x}>{x}</option>)}</select></div><div><label className="label">Rombel</label><select value={rombel} onChange={e=>setRombel(e.target.value)}><option value="">Semua rombel</option>{rombels.map(x=><option key={x}>{x}</option>)}</select></div></div></div>;
 }
 
+
+
 export function TeacherQuestionProgress({questions=[],attempts=[],teacherClasses=[]}){
  const [scope,setScope]=useState({ids:new Set()});const scoped=attempts.filter(a=>!scope.ids?.size||scope.ids.has(a.classId));
  const stats=new Map();scoped.forEach(a=>{const s=stats.get(a.questionId)||{n:0,c:0};s.n++;if(a.correct)s.c++;stats.set(a.questionId,s)});

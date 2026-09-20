@@ -143,12 +143,14 @@ export async function getTutorReply({ message, context, history }) {
       providerStatus: error?.providerStatus,
       message: error?.message
     });
+    const panel = context?.panelTitle ? ` pada ${context.panelTitle}` : "";
     const concept = context?.conceptName || "konsep yang sedang dipelajari";
-    const comic = context?.comicTitle || "komik ini";
+    const equation = context?.equation ? ` Persamaan yang tersedia: ${context.equation}.` : "";
     return {
-      reply: `Tutor sedang tidak tersedia sementara. Kamu tetap bisa melanjutkan belajar dari ${comic}. Coba kirim pertanyaan sekali lagi.`,
+      reply: `Mari kita tetap gunakan konteks belajar${panel}. Fokus kita adalah ${concept}.${equation} Coba jelaskan bagian mana yang membingungkan; kita pecah menjadi langkah kecil.`,
       ai: false,
-      unavailable: true,
+      unavailable: false,
+      fallback: true,
       aiError: error?.message || "AI unavailable",
       code: error?.code || "AI_UNAVAILABLE",
       status: error?.status || null
@@ -156,13 +158,38 @@ export async function getTutorReply({ message, context, history }) {
   }
 }
 
+
+
+export async function getAIHint({ question, hintIndex = 1, conceptId, conceptName, studentMastery = 0, misconceptionTag = null, context = {} }) {
+  try {
+    return await callEndpoint({
+      mode: "hint",
+      question,
+      hintIndex,
+      conceptId,
+      conceptName,
+      studentMastery,
+      misconceptionTag,
+      context
+    }, { timeoutMs: 18000 });
+  } catch (error) {
+    const explanation = String(question?.explanation || "").trim();
+    const fallback = hintIndex === 1
+      ? `Perhatikan informasi yang diberikan dan tentukan konsep ${conceptName || conceptId || "ini"} yang digunakan.`
+      : hintIndex === 2
+        ? (explanation ? `Gunakan ide pada pembahasan soal: ${explanation.slice(0, 220)}` : `Pecah soal menjadi satu langkah kecil terlebih dahulu dengan konsep ${conceptName || conceptId || "ini"}.`)
+        : `Tuliskan langkah penyelesaianmu satu per satu, lalu periksa kembali operasi pada basis dan pangkat.`;
+    return { reply: fallback, ai: false, fallback: true, hintIndex, code: error?.code || "AI_HINT_UNAVAILABLE" };
+  }
+}
+
 export async function correctAnswerWithAI({ question, selectedAnswer, correctAnswer, baselineDiagnosis, context = {} }) {
-  try { return await callEndpoint({ mode:"correct", question, selectedAnswer, correctAnswer, baselineDiagnosis, context }); }
+  try { return await callEndpoint({ mode:"correct", question, selectedAnswer, correctAnswer, baselineDiagnosis, context }, { timeoutMs: 14000 }); }
   catch (error) { console.error("AI correction failed", error); return { ...baselineDiagnosis, ai:false, unavailable:true, aiError:error?.message || "AI unavailable", code:error?.code || "AI_UNAVAILABLE" }; }
 }
 
 export async function recommendNextQuestion({ studentModel, questions, recentAttempts = [] }) {
-  try { return await callEndpoint({ mode:"recommend", studentModel, questions, recentAttempts }); }
+  try { return await callEndpoint({ mode:"recommend", studentModel, questions, recentAttempts }, { timeoutMs: 12000 }); }
   catch (error) { console.error("AI recommendation failed", error); return { ai:false, unavailable:true, questionId:null, reason:"Latihan berikut dipilih berdasarkan perkembangan belajarmu." }; }
 }
 

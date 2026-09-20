@@ -19,17 +19,18 @@ export default function TeacherDashboard({
  const [result,setResult]=useState(null);
  const [loading,setLoading]=useState(false);
 
- const safeStudents=Array.isArray(students)?students:[];
- const safeModels=Array.isArray(models)?models:[];
- const safeAttempts=Array.isArray(attempts)?attempts:[];
- const safeEvents=Array.isArray(events)?events:[];
- const safeComics=Array.isArray(state?.comics)?state.comics:[];
+ const studentList=Array.isArray(students)?students:[];
+ const classList=Array.isArray(teacherClasses)?teacherClasses:[];
+ const modelList=Array.isArray(models)?models:[];
+ const attemptList=Array.isArray(attempts)?attempts:[];
+ const eventList=Array.isArray(events)?events:[];
+ const comics=Array.isArray(state?.comics)?state.comics:[];
 
- const scopedStudents=safeStudents.filter(
+ const scopedStudents=studentList.filter(
    s =>
      !session?.uid ||
      s.classTeacherUid===session.uid ||
-     teacherClasses.some(c=>c.id===s.classId)
+     classList.some(c=>c.id===s.classId)
  );
 
  useEffect(()=>{
@@ -37,15 +38,15 @@ export default function TeacherDashboard({
  },[session?.uid]);
 
  const byUid=useMemo(
-   ()=>new Map(safeModels.map(m=>[m.uid,m])),
-   [models]
+   ()=>new Map(modelList.map(m=>[m.uid,m])),
+   [modelList]
  );
 
- const published=safeComics.filter(
+ const published=comics.filter(
    c=>c.status==="Published"
  ).length;
 
- const episodes=safeComics.reduce(
+ const episodes=comics.reduce(
    (n,c)=>n+(c.episodes?.length||0),
    0
  );
@@ -53,6 +54,33 @@ export default function TeacherDashboard({
  const selectedStudent=
    scopedStudents.find(s=>s.uid===selectedUid)||
    scopedStudents[0];
+ const topMastery=useMemo(()=>{
+   const rows=[];
+   modelList.forEach(m=>Object.entries(m.concepts||{}).forEach(([id,p])=>{
+     if(scopedStudents.some(s=>s.uid===m.uid)) rows.push({id,value:Number(p?.mastery||0)});
+   }));
+   const grouped=new Map();
+   rows.forEach(r=>grouped.set(r.id,[...(grouped.get(r.id)||[]),r.value]));
+   return [...grouped.entries()].map(([id,v])=>({id,value:v.reduce((a,b)=>a+b,0)/v.length})).sort((a,b)=>b.value-a.value).slice(0,3);
+ },[modelList,scopedStudents]);
+ const lowestMastery=useMemo(()=>{
+   const rows=[];
+   modelList.forEach(m=>Object.entries(m.concepts||{}).forEach(([id,p])=>{
+     if(scopedStudents.some(s=>s.uid===m.uid)) rows.push({id,value:Number(p?.mastery||0)});
+   }));
+   const grouped=new Map();
+   rows.forEach(r=>grouped.set(r.id,[...(grouped.get(r.id)||[]),r.value]));
+   return [...grouped.entries()].map(([id,v])=>({id,value:v.reduce((a,b)=>a+b,0)/v.length})).sort((a,b)=>a.value-b.value).slice(0,3);
+ },[modelList,scopedStudents]);
+
+ const topMisconceptions=useMemo(()=>{
+   const counts=new Map();
+   modelList.filter(m=>scopedStudents.some(s=>s.uid===m.uid)).forEach(m=>(m.misconceptions||[]).filter(x=>!x.resolved).forEach(x=>{
+     const key=x.tag||x.conceptId||"UNCLASSIFIED"; counts.set(key,(counts.get(key)||0)+1);
+   }));
+   return [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,3);
+ },[modelList,scopedStudents]);
+
 
  async function recommend(){
    if(!selectedStudent||!onAIRecommend)return;
@@ -66,12 +94,12 @@ export default function TeacherDashboard({
      {};
 
    const studentAttempts=
-     safeAttempts
+     attemptList
        .filter(a=>a.uid===selectedStudent.uid)
        .slice(0,25);
 
    const studentEvents=
-     safeEvents
+     eventList
        .filter(e=>e.uid===selectedStudent.uid)
        .slice(0,25);
 
@@ -128,7 +156,7 @@ export default function TeacherDashboard({
          </div>
          <div>
            <span>Total E-Comic</span>
-           <strong>{state.comics.length}</strong>
+           <strong>{comics.length}</strong>
          </div>
        </div>
 
@@ -162,6 +190,21 @@ export default function TeacherDashboard({
          </div>
        </div>
 
+     </div>
+
+     <div className="dashboard-grid" style={{marginTop:18}}>
+       <div className="card">
+         <div className="section-head"><div><h2>Top Mastery</h2><span>Konsep yang paling dikuasai siswa</span></div></div>
+         {topMastery.length ? topMastery.map(x=><div className="list-item" key={x.id}><strong>{x.id}</strong><b>{Math.round(x.value*100)}%</b></div>) : <div className="empty-state"><span>Belum ada data mastery.</span></div>}
+       </div>
+       <div className="card">
+         <div className="section-head"><div><h2>Lowest Mastery</h2><span>Konsep yang paling perlu diperkuat</span></div></div>
+         {lowestMastery.length ? lowestMastery.map(x=><div className="list-item" key={x.id}><strong>{x.id}</strong><b>{Math.round(x.value*100)}%</b></div>) : <div className="empty-state"><span>Belum ada data mastery.</span></div>}
+       </div>
+       <div className="card">
+         <div className="section-head"><div><h2>Miskonsepsi Utama</h2><span>Pola yang paling sering muncul</span></div></div>
+         {topMisconceptions.length ? topMisconceptions.map(([tag,n])=><div className="list-item" key={tag}><strong>{tag}</strong><b>{n} siswa</b></div>) : <div className="empty-state"><span>Belum ada miskonsepsi aktif.</span></div>}
+       </div>
      </div>
 
      <div className="ac-hero">
@@ -363,7 +406,7 @@ export default function TeacherDashboard({
 
          <div className="comic-mini-grid">
 
-           {state.comics.slice(0,2).map(c=>(
+           {comics.slice(0,2).map(c=>(
              <div
                className="ac-comic-mini"
                key={c.id}

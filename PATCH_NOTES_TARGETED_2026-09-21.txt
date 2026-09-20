@@ -1,0 +1,45 @@
+AC-ITS E-COMIC — Targeted Fixes (2026-09-21)
+
+Perbaikan hanya pada bagian yang diperlukan:
+
+1. AI Tutor
+- Tutor tidak lagi berhenti pada pesan "Tutor tidak tersedia" ketika endpoint/provider gagal.
+- Fallback tetap menggunakan konteks panel/konsep.
+- Jalur Tutor dibuat lebih cepat: timeout/retry khusus Tutor dipangkas.
+- Tutor tetap memakai gambar panel bila tersedia.
+
+2. Adaptive Practice
+- Rekomendasi lokal langsung muncul setelah jawaban benar; tidak menunggu panggilan AI kedua.
+- Rekomendasi AI tetap dipanggil di background untuk pencatatan/referensi.
+- Validasi mencegah AI memilih konsep yang belum pernah dilalui sebagai rekomendasi penguatan.
+
+3. AI Hint
+- Ditambahkan mode AI khusus untuk Hint 1–3.
+- Hint spesifik terhadap soal/konsep/miskonsepsi.
+- Jika AI gagal, tetap ada fallback hint kontekstual.
+- Penggunaan hint tetap direkam sebagai aktivitas siswa.
+
+4. Student Dashboard
+- Rekomendasi tetap hanya dari konsep yang sudah pernah dilalui.
+
+5. E-Comic
+- Cover dibuat tidak terlalu dominan sehingga deskripsi lebih terbaca.
+- Narasi/dialog/deskripsi sederhana seperti a^n dan a/b dirender sebagai matematika saat ditampilkan.
+- Persamaan panel tetap menggunakan KaTeX.
+
+6. Teacher Dashboard
+- Ditambahkan Top Mastery, Lowest Mastery, dan Miskonsepsi Utama.
+
+7. Teacher Analytics
+- Ditambahkan Top/Lowest Mastery dan Miskonsepsi Teratas.
+- Ditambahkan tombol Unduh Analitik Excel (.xls) berisi ringkasan siswa, nilai latihan, nilai ujian, mastery, attempt, benar, dan waktu belajar.
+
+8. Teacher Grades
+- Rekap Nilai Siswa menggunakan Nilai Latihan, Nilai Ujian, dan Mastery secara terpisah.
+
+9. Attendance
+- History guru sekarang menampilkan tanggal dan jam presensi.
+
+Catatan:
+- File .env.local dan .git tidak disertakan dalam paket agar kredensial lokal tidak ikut terbawa.
+- node_modules dan dist tidak disertakan; jalankan `npm install` sebelum `npm run dev`/`npm run build`.
