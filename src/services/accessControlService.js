@@ -4,39 +4,43 @@ import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 const CLASSES = "classes_v3";
 const TEACHER_CODES = "teacherRegistrationCodes_v3";
 
-// Normalisasi identitas sekolah/kelas agar data lama dan data baru tetap cocok.
-export function normalizeSchoolName(value = "") {
-  const s = String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
-  if (!s) return "";
-  const compact = s.replace(/[.,]/g, "").replace(/\s+/g, "");
-  if (compact === "sman5kotajambi" || compact === "smanegeri5kotajambi") return "sman5kotajambi";
-  if (compact === "smpn5kotajambi" || compact === "smpnegeri5kotajambi") return "smpn5kotajambi";
-  return compact.replace(/^sma negeri /, "sman ").replace(/^smp negeri /, "smpn ");
-}
-
-export function normalizeGrade(value = "") {
-  return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
-}
-
-export function normalizeRombel(value = "") {
-  const s = String(value || "").trim().toUpperCase();
-  const m = s.match(/(?:X|XI|XII|VII|VIII|IX)?\s*[.\-]?\s*(\d+)$/);
-  return m ? String(Number(m[1])) : s.replace(/[^0-9]/g, "") || s;
-}
-
-export function sameSchool(a, b) { return normalizeSchoolName(a) === normalizeSchoolName(b); }
-
 function localRead(key, fallback = []) { try { const raw = localStorage.getItem(`acits-access:${key}`); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } }
 function localWrite(key, value) { try { localStorage.setItem(`acits-access:${key}`, JSON.stringify(value)); } catch {} }
 function localUpsert(key, item) { const rows = localRead(key, []); localWrite(key, [...rows.filter(x => x.id !== item.id), item]); }
 async function ready() { return Boolean(firebaseEnabled && db && await ensureFirebaseAuth()); }
+function normalizeSchool(value = "") {
+  return String(value || "")
+    .trim().toLowerCase()
+    .replace(/\bsma\s+negeri\b/g, "sman")
+    .replace(/\bsma\s+n\b/g, "sman")
+    .replace(/\bsmp\s+negeri\b/g, "smpn")
+    .replace(/\bsmp\s+n\b/g, "smpn")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizeLevel(value = "") {
+  const v = String(value || "").trim().toUpperCase();
+  return v === "SENIOR HIGH SCHOOL" ? "SMA" : v === "JUNIOR HIGH SCHOOL" ? "SMP" : v;
+}
+
+function normalizeGradeRombel(grade = "", rombel = "") {
+  let g = String(grade || "").trim().toUpperCase();
+  let r = String(rombel || "").trim();
+  const combined = g || r;
+  const m = combined.match(/^(VII|VIII|IX|X|XI|XII)[\s._-]*(\d+)$/i);
+  if (m) { g = m[1].toUpperCase(); r = m[2]; }
+  return { grade: g, rombel: r || "1" };
+}
+
+function localClasses() { return localRead("classes", []); }
+
 
 export async function createTeacherRegistrationCode(adminUid, meta = {}) {
   const code = `GURU-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   const id = code;
   const item = { id, code, active: true, createdBy: adminUid, createdAt: new Date().toISOString(), maxUses: Number(meta.maxUses || 1), usedCount: 0, label: meta.label || "Registrasi Guru" };
   localUpsert("teacher-codes", item);
-  if (await ready()) { await setDoc(doc(db, TEACHER_CODES, id), item, { merge: true }); }
+  if (await ready()) { try { await setDoc(doc(db, TEACHER_CODES, id), item, { merge: true }); } catch(e) { throw new Error(`Kode registrasi gagal disimpan ke Firebase: ${e?.code || e?.message || "unknown error"}`); } }
   return item;
 }
 
@@ -74,46 +78,69 @@ export async function consumeTeacherRegistrationCode(code, teacherUid) {
 }
 
 export async function createTeacherClass(teacher, data = {}) {
+  if (!teacher?.uid) throw new Error("Akun Guru belum siap.");
+  const normalized = normalizeGradeRombel(data.grade || teacher.grade || "X", data.rombel || teacher.rombel || "1");
   const school = String(data.school || teacher.school || "").trim();
-  const educationLevel = String(data.educationLevel || "SMA").trim().toUpperCase();
-  const grade = normalizeGrade(data.grade || "X");
-  const rombel = normalizeRombel(data.rombel || "1");
+  const level = normalizeLevel(data.educationLevel || teacher.educationLevel || "SMA");
   const existing = await listClassesForTeacher(teacher.uid);
-  const duplicate = existing.find(x => sameSchool(x.school, school) && String(x.educationLevel || "").toUpperCase() === educationLevel && normalizeGrade(x.grade) === grade && normalizeRombel(x.rombel) === rombel && x.active !== false);
+  const duplicate = existing.find(x => normalizeSchool(x.school) === normalizeSchool(school) && normalizeLevel(x.educationLevel) === level && normalizeGradeRombel(x.grade, x.rombel).grade === normalized.grade && normalizeGradeRombel(x.grade, x.rombel).rombel === normalized.rombel && x.active !== false);
   if (duplicate) return duplicate;
   const id = `class-${teacher.uid}-${Date.now()}`;
-  const item = { id, teacherUid: teacher.uid, teacherName: teacher.name || "Guru", school, educationLevel, grade, rombel, name: `${grade} ${rombel}`, active: true, enrollmentOpen: true, createdAt: new Date().toISOString() };
+  const item = { id, teacherUid: teacher.uid, teacherName: teacher.name || "Guru", school, educationLevel: level, grade: normalized.grade, rombel: normalized.rombel, name: `${normalized.grade} ${normalized.rombel}`, active: true, enrollmentOpen: true, createdAt: new Date().toISOString() };
   localUpsert("classes", item);
-  if (await ready()) { await setDoc(doc(db, CLASSES, id), item, { merge: true }); }
+  if (await ready()) {
+    try { await setDoc(doc(db, CLASSES, id), item, { merge: true }); }
+    catch (e) { throw new Error(`Kelas gagal disimpan ke Firebase: ${e?.code || e?.message || "permission/network error"}`); }
+  }
   return item;
 }
 
 export async function listClassesForTeacher(teacherUid) {
   if (!teacherUid) return [];
+  const local = localClasses().filter(x => x.teacherUid === teacherUid);
   if (await ready()) {
-    try { const snap = await getDocs(query(collection(db, CLASSES), where("teacherUid", "==", teacherUid))); return snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel))); } catch (e) { console.warn(e); }
+    try {
+      const snap = await getDocs(query(collection(db, CLASSES), where("teacherUid", "==", teacherUid)));
+      const cloud = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      const byId = new Map(cloud.map(x => [x.id, x]));
+      local.forEach(x => { if (!byId.has(x.id)) byId.set(x.id, x); });
+      return [...byId.values()].sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel)));
+    } catch (e) { console.warn("class list failed", e); }
   }
-  return localRead("classes", []).filter(x => x.teacherUid === teacherUid);
+  return local.sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel)));
 }
 
 export async function findOpenClass({ school, educationLevel, grade, rombel }) {
-  const targetSchool = normalizeSchoolName(school);
-  const targetLevel = String(educationLevel || "").trim().toUpperCase();
-  const targetGrade = normalizeGrade(grade);
-  const targetRombel = normalizeRombel(rombel || "1");
-  const matches = rows => rows.find(x => x.active !== false && x.enrollmentOpen !== false && sameSchool(x.school, targetSchool) && String(x.educationLevel || "").toUpperCase() === targetLevel && normalizeGrade(x.grade) === targetGrade && normalizeRombel(x.rombel) === targetRombel);
+  const level = normalizeLevel(educationLevel);
+  const normalized = normalizeGradeRombel(grade, rombel);
+  const schoolKey = normalizeSchool(school);
+  const matches = rows => rows.find(x => {
+    const xr = normalizeGradeRombel(x.grade, x.rombel);
+    return x.active !== false && x.enrollmentOpen !== false && normalizeSchool(x.school) === schoolKey && normalizeLevel(x.educationLevel) === level && xr.grade === normalized.grade && xr.rombel === normalized.rombel;
+  }) || null;
   if (await ready()) {
     try {
-      // Jangan query school secara exact karena data lama dapat memakai
-      // "SMA Negeri 5 Kota Jambi" sementara data baru memakai "SMAN 5 Kota Jambi".
-      // Query field yang stabil, lalu normalisasi nama sekolah di client.
-      const q = query(collection(db, CLASSES), where("educationLevel", "==", targetLevel), where("grade", "==", targetGrade), where("rombel", "==", targetRombel));
+      // Query exact school first so Firestore security rules can prove that
+      // every returned class is eligible for student registration.
+      const q = query(collection(db, CLASSES), where("school", "==", String(school || "").trim()), where("educationLevel", "==", level), where("grade", "==", normalized.grade), where("rombel", "==", normalized.rombel));
       const snap = await getDocs(q);
-      const rows = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      return matches(rows) || null;
-    } catch (e) { console.warn("findOpenClass failed:", e); }
+      const exact = matches(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+      if (exact) return exact;
+      // Support the common alias "SMA Negeri" vs "SMAN" without opening a
+      // broad class query that would violate Firestore security constraints.
+      const aliases = [];
+      if (/^sman\b/i.test(String(school || ""))) aliases.push(String(school).replace(/^SMAN/i, "SMA Negeri"));
+      if (/^sma\s+negeri\b/i.test(String(school || ""))) aliases.push(String(school).replace(/^SMA\s+Negeri/i, "SMAN"));
+      for (const alias of aliases) {
+        if (alias.trim() === String(school || "").trim()) continue;
+        const q2 = query(collection(db, CLASSES), where("school", "==", alias.trim()), where("educationLevel", "==", level), where("grade", "==", normalized.grade), where("rombel", "==", normalized.rombel));
+        const snap2 = await getDocs(q2);
+        const found = matches(snap2.docs.map(d => ({ id:d.id, ...d.data() })));
+        if (found) return found;
+      }
+    } catch (e) { console.warn("open class lookup failed", e); }
   }
-  return matches(localRead("classes", [])) || null;
+  return matches(localClasses());
 }
 
 export async function listAllClasses() {

@@ -57,11 +57,12 @@ export async function login(role, email, password){
         const roleLabel = profile.role === "teacher" ? "Guru" : profile.role === "admin" ? "Admin" : "Siswa";
         return { ok:false, message:`Akun ini terdaftar sebagai ${roleLabel}. Silakan pilih login yang sesuai.` };
       }
-      if (profile.role === "student" && !profile.classId) {
+      if (profile.role === "student" && profile.school && profile.educationLevel && profile.grade && (!profile.classId || !profile.classTeacherUid || !profile.classTeacherName)) {
         const match = await findOpenClass({ school: profile.school || "", educationLevel: profile.educationLevel, grade: profile.grade, rombel: profile.rombel || "1" });
         if (match) {
-          profile = { ...profile, classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt: new Date().toISOString() };
-          if (db) await setDoc(doc(db, "users", credential.user.uid), { classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt: profile.classJoinedAt }, { merge: true });
+          const classJoinedAt = profile.classJoinedAt || new Date().toISOString();
+          profile = { ...profile, classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt };
+          if (db) await setDoc(doc(db, "users", credential.user.uid), { classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt }, { merge: true });
         }
       }
       const session = makeSession(profile, credential.user.uid);

@@ -10,6 +10,8 @@ export default function ComicManagement({ comics, navigate, onCreate, onEdit }) 
   const [levelFilter, setLevelFilter] = useState("Semua");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const visible = comics.filter(c =>
     c.title.toLowerCase().includes(search.toLowerCase()) &&
@@ -17,12 +19,13 @@ export default function ComicManagement({ comics, navigate, onCreate, onEdit }) 
     (levelFilter === "Semua" || (c.educationLevel || "SMA") === levelFilter)
   );
 
-  function submit(e) {
-    e.preventDefault();
+  async function submit(e) {
+    e.preventDefault(); setError("");
     if (!form.title.trim()) return;
-    onCreate(form);
-    setOpen(false);
-    setForm(EMPTY_FORM);
+    setSaving(true);
+    try { await onCreate(form); setOpen(false); setForm(EMPTY_FORM); }
+    catch(e){ setError(e?.message || "E-Comic gagal dibuat."); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -31,6 +34,7 @@ export default function ComicManagement({ comics, navigate, onCreate, onEdit }) 
       <h1 className="page-title">Kelola E-Comic</h1>
       <p className="page-desc">Guru dapat membuat, mengubah, mengunggah panel, dan menerbitkan konten sesuai jenjang SMP/SMA.</p>
 
+      {error && <div className="upload-note error" style={{marginBottom:12}}>{error}</div>}
       <div className="toolbar">
         <div className="toolbar-left" style={{flexWrap:"wrap"}}>
           <input className="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari E-Comic..." />
@@ -65,7 +69,7 @@ export default function ComicManagement({ comics, navigate, onCreate, onEdit }) 
             </div>
             <div className="field"><label className="label">Status</label><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>Draft</option><option>Published</option></select></div>
             <ConceptPicker value={form.concepts} onChange={concepts=>setForm({...form,concepts})} label="Konsep E-Comic" />
-            <div className="actions"><button type="button" className="btn" onClick={()=>setOpen(false)}>Batal</button><button className="btn-primary">Buat & Buka Editor</button></div>
+            <div className="actions"><button type="button" className="btn" onClick={()=>setOpen(false)}>Batal</button><button className="btn-primary" disabled={saving}>{saving?"Menyimpan…":"Buat & Buka Editor"}</button></div>
           </form>
         </div>
       )}

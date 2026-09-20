@@ -194,10 +194,13 @@ export async function deactivateClassAccessCode(id) {
 }
 
 export async function saveKnowledgeItem(item = {}) {
-  const record = { ...item, id: item.id || `kb-${Date.now()}`, updatedAt:new Date().toISOString() };
-  localUpsert("knowledgeBase_v2", record.id, record);
-  if (await ready()) { try { await setDoc(doc(db,"knowledgeBase_v2",record.id),record,{merge:true}); return true; } catch(e){ console.warn("knowledge write failed",e); } }
-  return false;
+  const record = { ...item, id: item.id || `kb-${Date.now()}`, updatedAt:new Date().toISOString(), pendingSync:false };
+  localUpsert("knowledgeBase_v2", record.id, { ...record, pendingSync: Boolean(firebaseEnabled) });
+  if (await ready()) {
+    try { await setDoc(doc(db,"knowledgeBase_v2",record.id),record,{merge:true}); localUpsert("knowledgeBase_v2", record.id, record); return true; }
+    catch(e){ console.error("knowledge write failed", e); localUpsert("knowledgeBase_v2", record.id, { ...record, pendingSync:true }); throw new Error(`Knowledge Base gagal disimpan ke Firebase: ${e?.code || e?.message || "unknown error"}`); }
+  }
+  return true;
 }
 
 export async function deleteKnowledgeItem(id) {
@@ -207,8 +210,16 @@ export async function deleteKnowledgeItem(id) {
 }
 
 export async function listKnowledgeItems() {
-  if(await ready()){try{const snap=await getDocs(collection(db,"knowledgeBase_v2"));return snap.docs.map(d=>({id:d.id,...d.data()}));}catch(e){console.warn("knowledge list failed",e);}}
-  return localRead("knowledgeBase_v2",[]);
+  const local = localRead("knowledgeBase_v2",[]);
+  if(await ready()){
+    try {
+      const cloud = (await getDocs(collection(db,"knowledgeBase_v2"))).docs.map(d=>({id:d.id,...d.data()}));
+      const byId = new Map(cloud.map(x=>[x.id,x]));
+      local.filter(x=>x.pendingSync).forEach(x=>{ if(!byId.has(x.id)) byId.set(x.id,x); });
+      return [...byId.values()];
+    } catch(e){ console.warn("knowledge list failed",e); }
+  }
+  return local;
 }
 
 export async function saveExamResult(result = {}) {

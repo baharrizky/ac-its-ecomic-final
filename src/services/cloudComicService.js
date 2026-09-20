@@ -112,8 +112,8 @@ export async function saveCloudComic(comic) {
     await setDoc(doc(db, COLLECTION, normalized.id), { ...normalized, syncedAt: new Date().toISOString() }, { merge: true });
     return true;
   } catch (error) {
-    console.warn("Cloud comic write failed:", error);
-    return false;
+    console.error("Cloud comic write failed:", error);
+    throw new Error(`E-Comic gagal disimpan ke Firebase: ${error?.code || error?.message || "unknown error"}`);
   }
 }
 

@@ -6,12 +6,12 @@ const COLLECTION = "ecomic_questions_v2";
 export async function saveCloudQuestion(question) {
   if (!firebaseEnabled || !db || !question?.id || !(await ensureFirebaseAuth())) return false;
   try { await setDoc(doc(db, COLLECTION, question.id), { ...question, updatedAt: new Date().toISOString() }, { merge: true }); return true; }
-  catch (e) { console.warn("Cloud question write failed:", e); return false; }
+  catch (e) { console.error("Cloud question write failed:", e); throw new Error(`Soal gagal disimpan ke Firebase: ${e?.code || e?.message || "unknown error"}`); }
 }
 
 export async function deleteCloudQuestion(id) {
   if (!firebaseEnabled || !db || !id || !(await ensureFirebaseAuth())) return false;
-  try { await deleteDoc(doc(db, COLLECTION, id)); return true; } catch (e) { console.warn("Cloud question delete failed:", e); return false; }
+  try { await deleteDoc(doc(db, COLLECTION, id)); return true; } catch (e) { console.error("Cloud question delete failed:", e); throw new Error(`Soal gagal dihapus dari Firebase: ${e?.code || e?.message || "unknown error"}`); }
 }
 
 export async function subscribeCloudQuestions(session, onChange) {

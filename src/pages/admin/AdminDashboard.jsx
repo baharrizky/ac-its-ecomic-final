@@ -25,6 +25,8 @@ export default function AdminDashboard({ session }) {
   const [label, setLabel] = useState("");
   const [maxUses, setMaxUses] = useState(1);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const [schoolFilter, setSchoolFilter] = useState("Semua");
   const [teacherFilter, setTeacherFilter] = useState("Semua");
 
@@ -44,21 +46,12 @@ export default function AdminDashboard({ session }) {
   useEffect(() => { refresh(); }, []);
 
   async function create() {
-    const item = await createTeacherRegistrationCode(session?.uid, {
-      label: label.trim() || "Registrasi Guru",
-      maxUses
-    });
-    setLabel("");
-    setMaxUses(1);
-    setMessage(`Kode ${item.code} berhasil dibuat.`);
-    setTab("codes");
-    await refresh();
+    setError(""); setMessage(""); setBusy(true);
+    try { const item = await createTeacherRegistrationCode(session?.uid, { label: label.trim() || "Registrasi Guru", maxUses }); setLabel(""); setMaxUses(1); setMessage(`Kode ${item.code} berhasil dibuat.`); setTab("codes"); await refresh(); }
+    catch(e){ setError(e?.message || "Kode gagal dibuat."); } finally { setBusy(false); }
   }
 
-  async function disable(id) {
-    await deactivateTeacherRegistrationCode(id);
-    await refresh();
-  }
+  async function disable(id) { setError(""); try { await deactivateTeacherRegistrationCode(id); await refresh(); } catch(e){ setError(e?.message || "Kode gagal dinonaktifkan."); } }
 
   const schools = useMemo(() => {
     const names = new Set();
@@ -112,7 +105,7 @@ export default function AdminDashboard({ session }) {
         Kelola struktur Sekolah, Guru, Kelas, Siswa, dan akses registrasi Guru.
       </p>
 
-      {message && <div className="success-note">{message}</div>}
+      {message && <div className="success-note">{message}</div>}{error && <div className="upload-note error">{error}</div>}
 
       <div className="stats-row" style={{ marginTop: 16 }}>
         <div className="ac-stat"><div className="stat-icon purple">S</div><div><span>Sekolah</span><strong>{schools.length}</strong></div></div>
@@ -240,7 +233,7 @@ export default function AdminDashboard({ session }) {
             <div><label className="label">Label</label><input value={label} onChange={e => setLabel(e.target.value)} placeholder="Contoh: Guru SMA Jambi" /></div>
             <div><label className="label">Maksimal penggunaan</label><input type="number" min="1" max="100" value={maxUses} onChange={e => setMaxUses(Math.max(1, Number(e.target.value) || 1))} /></div>
           </div>
-          <button className="btn-primary" style={{ marginTop: 12 }} onClick={create}>+ Buat Kode Registrasi Guru</button>
+          <button className="btn-primary" style={{ marginTop: 12 }} onClick={create} disabled={busy}>{busy?"Menyimpan…":"+ Buat Kode Registrasi Guru"}</button>
         </div>
         <div className="card" style={{ marginTop: 18 }}>
           <h2>Daftar Kode</h2>
