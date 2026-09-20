@@ -18,6 +18,6 @@ export async function subscribeCloudQuestions(session, onChange) {
   if (!firebaseEnabled || !db || !(await ensureFirebaseAuth())) return () => {};
   let source = collection(db, COLLECTION);
   if (session?.role === "teacher") source = query(collection(db, COLLECTION), where("ownerTeacherUid", "==", session.uid));
-  else if (session?.role === "student") { if (!session.classId) return () => {}; source = query(collection(db, COLLECTION), where("status", "==", "Published"), where("assignedClassIds", "array-contains", session.classId)); }
-  return onSnapshot(source, snap => onChange(snap.docs.map(d => ({ id:d.id, ...d.data() }))), error => console.warn("Cloud question subscription failed:", error));
+  else if (session?.role === "student") { if (!session.classTeacherUid) return () => {}; source = query(collection(db, COLLECTION), where("ownerTeacherUid", "==", session.classTeacherUid)); }
+  return onSnapshot(source, snap => onChange(snap.docs.map(d => ({ id:d.id, ...d.data() })).filter(q => q.status === "Published")), error => console.warn("Cloud question subscription failed:", error));
 }

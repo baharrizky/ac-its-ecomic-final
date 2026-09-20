@@ -96,9 +96,9 @@ export async function loadCloudComics(session = null) {
   try {
     let source = collection(db, COLLECTION);
     if (session?.role === "teacher") source = query(collection(db, COLLECTION), where("ownerTeacherUid", "==", session.uid));
-    else if (session?.role === "student") { if (!session.classId) return []; source = query(collection(db, COLLECTION), where("status", "==", "Published"), where("assignedClassIds", "array-contains", session.classId)); }
+    else if (session?.role === "student") { if (!session.classTeacherUid) return []; source = query(collection(db, COLLECTION), where("ownerTeacherUid", "==", session.classTeacherUid)); }
     const snap = await getDocs(source);
-    return snap.docs.map(d => normalizeComic({ id: d.id, ...d.data() }));
+    return snap.docs.map(d => normalizeComic({ id: d.id, ...d.data() })).filter(c => c.status === "Published");
   } catch (error) {
     console.warn("Cloud comic read failed:", error);
     return null;
@@ -121,10 +121,10 @@ export async function subscribeCloudComics(session, onChange) {
   if (!firebaseEnabled || !db || !(await ensureFirebaseAuth())) return () => {};
   let source = collection(db, COLLECTION);
   if (session?.role === "teacher") source = query(collection(db, COLLECTION), where("ownerTeacherUid", "==", session.uid));
-  else if (session?.role === "student") { if (!session.classId) return () => {}; source = query(collection(db, COLLECTION), where("status", "==", "Published"), where("assignedClassIds", "array-contains", session.classId)); }
+  else if (session?.role === "student") { if (!session.classTeacherUid) return () => {}; source = query(collection(db, COLLECTION), where("ownerTeacherUid", "==", session.classTeacherUid)); }
   const unsubscribe = onSnapshot(
     source,
-    snap => onChange(snap.docs.map(d => normalizeComic({ id: d.id, ...d.data() }))),
+    snap => onChange(snap.docs.map(d => normalizeComic({ id: d.id, ...d.data() })).filter(c => c.status === "Published")),
     error => console.warn("Cloud comic subscription failed:", error)
   );
   return unsubscribe;

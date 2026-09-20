@@ -23,7 +23,7 @@ export default function ComicReaderPage({comic,studentModel,questions=[],navigat
  const currentGlobalPanel=useMemo(()=>comic?comic.episodes.slice(0,ei).reduce((sum,ep)=>sum+(ep.panels?.length||0),0)+pi+1:0,[comic,ei,pi]);
  const overallProgress=totalPanels?Math.round(currentGlobalPanel/totalPanels*100):0;
  const conceptId=panel?.conceptIds?.[0]; const conceptName=concepts[conceptId]?.name||conceptId||"Konsep pembelajaran"; const mastery=conceptId?studentModel?.concepts?.[conceptId]?.mastery:null;
- const relatedQuestions=useMemo(()=>questions.filter(q=>!conceptId||q.conceptId===conceptId).slice(0,4),[questions,conceptId]);
+ const relatedQuestions=useMemo(()=>{const exact=questions.filter(q=>q.comicId===comic?.id && q.panelId===panel?.id);if(exact.length)return exact.slice(0,4);return questions.filter(q=>q.comicId===comic?.id && (!conceptId||q.conceptId===conceptId)).slice(0,4);},[questions,conceptId,comic?.id,panel?.id]);
  const activeQuestion=relatedQuestions[0];
  useEffect(()=>{
    const now=Date.now();
