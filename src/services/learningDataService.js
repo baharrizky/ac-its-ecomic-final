@@ -43,24 +43,28 @@ export function createEmptyStudentModel(concepts = {}) {
 
 export async function getStudentModel(uid, fallback) {
   if (!uid) return localRead(`studentModels/${uid || "anonymous"}`, fallback);
-  if (await ready()) {
+  if (firebaseEnabled) {
+    if (!(await ready())) return fallback;
     try {
       const snap = await getDoc(doc(db, "studentModels_v2", uid));
       if (snap.exists()) return { ...fallback, ...snap.data() };
-      await setDoc(doc(db, "studentModels_v2", uid), { ...fallback, uid, updatedAt: new Date().toISOString() }, { merge: true });
-    } catch (e) { console.warn("studentModel read failed", e); }
+      const payload={ ...fallback, uid, updatedAt: new Date().toISOString() };
+      await setDoc(doc(db, "studentModels_v2", uid), payload, { merge: true });
+      return payload;
+    } catch (e) { console.error("studentModel cloud read failed", e); return fallback; }
   }
   return localRead(`studentModels/${uid}`, fallback);
 }
 
 export async function saveStudentModel(uid, model) {
   const payload = { ...model, uid, updatedAt: new Date().toISOString() };
-  localWrite(`studentModels/${uid || "anonymous"}`, payload);
-  if (uid && await ready()) {
-    try { await setDoc(doc(db, "studentModels_v2", uid), payload, { merge: true }); return true; }
-    catch (e) { console.warn("studentModel write failed", e); }
+  if (firebaseEnabled) {
+    if (!(uid && await ready())) return false;
+    try { await setDoc(doc(db, "studentModels_v2", uid), payload, { merge: true }); localWrite(`studentModels/${uid}`, payload); return true; }
+    catch (e) { console.error("studentModel cloud write failed", e); return false; }
   }
-  return false;
+  localWrite(`studentModels/${uid || "anonymous"}`, payload);
+  return true;
 }
 
 export async function subscribeStudentModel(uid, onChange) {
@@ -71,12 +75,12 @@ export async function subscribeStudentModel(uid, onChange) {
 export async function recordLearningEvent(event = {}) {
   const item = { ...event, createdAt: event.createdAt || new Date().toISOString() };
   const id = event.id || `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  localUpsert("learningEvents_v2", id, { ...item, id });
-  if (await ready()) {
-    try { await setDoc(doc(db, "learningEvents_v2", id), { ...item, id }, { merge: true }); return true; }
-    catch (e) { console.warn("learning event write failed", e); }
+  if (firebaseEnabled) {
+    if (!(await ready())) return false;
+    try { await setDoc(doc(db, "learningEvents_v2", id), { ...item, id }, { merge: true }); localUpsert("learningEvents_v2", id, { ...item, id }); return true; }
+    catch (e) { console.error("learning event cloud write failed", e); return false; }
   }
-  return false;
+  localUpsert("learningEvents_v2", id, { ...item, id }); return true;
 }
 
 
@@ -91,7 +95,7 @@ export async function listLearningEvents(filters = {}) {
       let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       Object.entries(filters).forEach(([key, value]) => { if (value != null && value !== "" && !["uid","teacherUid","classId"].includes(key)) rows = rows.filter(r => r[key] === value); });
       return rows.sort((a,b)=>String(b.createdAt||b.endedAt||b.startedAt||"").localeCompare(String(a.createdAt||a.endedAt||a.startedAt||"")));
-    } catch (e) { console.warn("learning event list failed", e); }
+    } catch (e) { console.error("learning event list failed", e); return []; }
   }
   let rows = localRead("learningEvents_v2", []);
   Object.entries(filters).forEach(([key, value]) => { if (value != null && value !== "") rows = rows.filter(r => r[key] === value); });
@@ -100,12 +104,12 @@ export async function listLearningEvents(filters = {}) {
 
 export async function recordAttempt(attempt = {}) {
   const item = { ...attempt, id: attempt.id || `attempt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, createdAt: attempt.createdAt || new Date().toISOString() };
-  localUpsert("attempts_v2", item.id, item);
-  if (await ready()) {
-    try { await setDoc(doc(db, "attempts_v2", item.id), item, { merge: true }); return true; }
-    catch (e) { console.warn("attempt write failed", e); }
+  if (firebaseEnabled) {
+    if (!(await ready())) return false;
+    try { await setDoc(doc(db, "attempts_v2", item.id), item, { merge: true }); localUpsert("attempts_v2", item.id, item); return true; }
+    catch (e) { console.error("attempt cloud write failed", e); return false; }
   }
-  return false;
+  localUpsert("attempts_v2", item.id, item); return true;
 }
 
 export async function listAttempts(filters = {}) {
@@ -114,7 +118,7 @@ export async function listAttempts(filters = {}) {
       const constraints=[]; if(filters.uid)constraints.push(where("uid","==",filters.uid)); if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid)); if(filters.classId)constraints.push(where("classId","==",filters.classId));
       const snap=await getDocs(constraints.length?query(collection(db,"attempts_v2"),...constraints):collection(db,"attempts_v2"));
       let rows=snap.docs.map(d=>({id:d.id,...d.data()})); Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!==""&&!['uid','teacherUid','classId'].includes(key))rows=rows.filter(r=>r[key]===value)}); return rows.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
-    } catch(e){console.warn("attempt list failed",e)}
+    } catch(e){console.error("attempt list failed",e);return []}
   }
   let rows=localRead("attempts_v2",[]); Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!=="")rows=rows.filter(r=>r[key]===value)}); return rows;
 }
@@ -124,7 +128,7 @@ export async function listStudentModels() {
     try {
       const snap = await getDocs(collection(db, "studentModels_v2"));
       return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
-    } catch (e) { console.warn("student models list failed", e); }
+    } catch (e) { console.error("student models list failed", e); return []; }
   }
   const rows = localRead("studentModels_v2", []);
   return Array.isArray(rows) ? rows : [];
@@ -132,31 +136,31 @@ export async function listStudentModels() {
 
 export async function saveReflection(reflection = {}) {
   const item = { ...reflection, id: reflection.id || `reflection-${Date.now()}`, createdAt: reflection.createdAt || new Date().toISOString() };
-  localUpsert("reflections_v2", item.id, item);
-  if (await ready()) {
-    try { await setDoc(doc(db, "reflections_v2", item.id), item, { merge: true }); return true; }
-    catch (e) { console.warn("reflection write failed", e); }
+  if (firebaseEnabled) {
+    if (!(await ready())) return false;
+    try { await setDoc(doc(db, "reflections_v2", item.id), item, { merge: true }); localUpsert("reflections_v2", item.id, item); return true; }
+    catch (e) { console.error("reflection cloud write failed", e); return false; }
   }
-  return false;
+  localUpsert("reflections_v2", item.id, item); return true;
 }
 
 export async function listReflections(filters = {}) {
-  if(await ready()){try{const constraints=[];if(filters.uid)constraints.push(where("uid","==",filters.uid));if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid));if(filters.classId)constraints.push(where("classId","==",filters.classId));const snap=await getDocs(constraints.length?query(collection(db,"reflections_v2"),...constraints):collection(db,"reflections_v2"));return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));}catch(e){console.warn("reflection list failed",e)}}
+  if(await ready()){try{const constraints=[];if(filters.uid)constraints.push(where("uid","==",filters.uid));if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid));if(filters.classId)constraints.push(where("classId","==",filters.classId));const snap=await getDocs(constraints.length?query(collection(db,"reflections_v2"),...constraints):collection(db,"reflections_v2"));return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));}catch(e){console.error("reflection list failed",e);return []}}
   let rows=localRead("reflections_v2",[]);Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!=="")rows=rows.filter(r=>r[key]===value)});return rows;
 }
 
 export async function saveAttendance(item = {}) {
   const record = { ...item, id: item.id || `attendance-${item.uid || "u"}-${item.date || new Date().toISOString().slice(0,10)}` };
-  localUpsert("attendance_v2", record.id, record);
-  if (await ready()) {
-    try { await setDoc(doc(db, "attendance_v2", record.id), record, { merge: true }); return true; }
-    catch (e) { console.warn("attendance write failed", e); }
+  if (firebaseEnabled) {
+    if (!(await ready())) return false;
+    try { await setDoc(doc(db, "attendance_v2", record.id), record, { merge: true }); localUpsert("attendance_v2", record.id, record); return true; }
+    catch (e) { console.error("attendance cloud write failed", e); return false; }
   }
-  return false;
+  localUpsert("attendance_v2", record.id, record); return true;
 }
 
 export async function listAttendance(filters = {}) {
-  if(await ready()){try{const constraints=[];if(filters.uid)constraints.push(where("uid","==",filters.uid));if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid));if(filters.classId)constraints.push(where("classId","==",filters.classId));const snap=await getDocs(constraints.length?query(collection(db,"attendance_v2"),...constraints):collection(db,"attendance_v2"));let rows=snap.docs.map(d=>({id:d.id,...d.data()}));Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!==""&&!['uid','teacherUid','classId'].includes(key))rows=rows.filter(r=>r[key]===value)});return rows.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));}catch(e){console.warn("attendance list failed",e)}}
+  if(await ready()){try{const constraints=[];if(filters.uid)constraints.push(where("uid","==",filters.uid));if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid));if(filters.classId)constraints.push(where("classId","==",filters.classId));const snap=await getDocs(constraints.length?query(collection(db,"attendance_v2"),...constraints):collection(db,"attendance_v2"));let rows=snap.docs.map(d=>({id:d.id,...d.data()}));Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!==""&&!['uid','teacherUid','classId'].includes(key))rows=rows.filter(r=>r[key]===value)});return rows.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));}catch(e){console.error("attendance list failed",e);return []}}
   let rows=localRead("attendance_v2",[]);Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!=="")rows=rows.filter(r=>r[key]===value)});return rows;
 }
 
@@ -194,13 +198,10 @@ export async function deactivateClassAccessCode(id) {
 }
 
 export async function saveKnowledgeItem(item = {}) {
-  const record = { ...item, id: item.id || `kb-${Date.now()}`, updatedAt:new Date().toISOString(), pendingSync:false };
-  localUpsert("knowledgeBase_v2", record.id, { ...record, pendingSync: Boolean(firebaseEnabled) });
-  if (await ready()) {
-    try { await setDoc(doc(db,"knowledgeBase_v2",record.id),record,{merge:true}); localUpsert("knowledgeBase_v2", record.id, record); return true; }
-    catch(e){ console.error("knowledge write failed", e); localUpsert("knowledgeBase_v2", record.id, { ...record, pendingSync:true }); throw new Error(`Knowledge Base gagal disimpan ke Firebase: ${e?.code || e?.message || "unknown error"}`); }
-  }
-  return true;
+  const record = { ...item, id: item.id || `kb-${Date.now()}`, updatedAt:new Date().toISOString() };
+  localUpsert("knowledgeBase_v2", record.id, record);
+  if (await ready()) { try { await setDoc(doc(db,"knowledgeBase_v2",record.id),record,{merge:true}); return true; } catch(e){ console.warn("knowledge write failed",e); } }
+  return false;
 }
 
 export async function deleteKnowledgeItem(id) {
@@ -210,27 +211,21 @@ export async function deleteKnowledgeItem(id) {
 }
 
 export async function listKnowledgeItems() {
-  const local = localRead("knowledgeBase_v2",[]);
-  if(await ready()){
-    try {
-      const cloud = (await getDocs(collection(db,"knowledgeBase_v2"))).docs.map(d=>({id:d.id,...d.data()}));
-      const byId = new Map(cloud.map(x=>[x.id,x]));
-      local.filter(x=>x.pendingSync).forEach(x=>{ if(!byId.has(x.id)) byId.set(x.id,x); });
-      return [...byId.values()];
-    } catch(e){ console.warn("knowledge list failed",e); }
-  }
-  return local;
+  if(await ready()){try{const snap=await getDocs(collection(db,"knowledgeBase_v2"));return snap.docs.map(d=>({id:d.id,...d.data()}));}catch(e){console.warn("knowledge list failed",e);}}
+  return localRead("knowledgeBase_v2",[]);
 }
 
 export async function saveExamResult(result = {}) {
   const item = { ...result, id: result.id || `exam-${Date.now()}`, createdAt:result.createdAt || new Date().toISOString() };
-  localUpsert("examResults_v2", item.id, item);
-  if(await ready()){try{await setDoc(doc(db,"examResults_v2",item.id),item,{merge:true});return true;}catch(e){console.warn("exam result failed",e);}}
-  return false;
+  if (firebaseEnabled) {
+    if (!(await ready())) return false;
+    try { await setDoc(doc(db,"examResults_v2",item.id),item,{merge:true}); localUpsert("examResults_v2", item.id, item); return true; } catch(e){ console.error("exam result cloud write failed",e); return false; }
+  }
+  localUpsert("examResults_v2", item.id, item); return true;
 }
 
 export async function listExamResults(filters = {}) {
-  if(await ready()){try{const constraints=[];if(filters.uid)constraints.push(where("uid","==",filters.uid));if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid));if(filters.classId)constraints.push(where("classId","==",filters.classId));const snap=await getDocs(constraints.length?query(collection(db,"examResults_v2"),...constraints):collection(db,"examResults_v2"));return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));}catch(e){console.warn("exam list failed",e)}}
+  if(await ready()){try{const constraints=[];if(filters.uid)constraints.push(where("uid","==",filters.uid));if(filters.teacherUid)constraints.push(where("teacherUid","==",filters.teacherUid));if(filters.classId)constraints.push(where("classId","==",filters.classId));const snap=await getDocs(constraints.length?query(collection(db,"examResults_v2"),...constraints):collection(db,"examResults_v2"));return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));}catch(e){console.error("exam list failed",e);return []}}
   let rows=localRead("examResults_v2",[]);Object.entries(filters).forEach(([key,value])=>{if(value!=null&&value!=="")rows=rows.filter(r=>r[key]===value)});return rows;
 }
 

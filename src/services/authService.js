@@ -291,15 +291,11 @@ export async function getRegisteredStudents(teacherUid = null, teacherClasses = 
           });
           return [];
         }
-        const q = query(
-          collection(db, "users"),
-          where("role", "==", "student"),
-          where("classTeacherUid", "==", teacherUid)
-        );
+        // One equality filter avoids requiring a composite Firestore index.
+        // The rule below is also aligned to classTeacherUid. Role is checked client-side.
+        const q = query(collection(db, "users"), where("classTeacherUid", "==", teacherUid));
         const snap = await getDocs(q);
-        return snap.docs
-          .map(d=>({uid:d.id,...d.data()}))
-          .filter(s=>s.role === "student" && s.classTeacherUid === teacherUid);
+        return snap.docs.map(d=>({uid:d.id,...d.data()})).filter(s=>s.role === "student" && s.classTeacherUid === teacherUid);
       }
 
       const q = query(collection(db, "users"), where("role", "==", "student"));

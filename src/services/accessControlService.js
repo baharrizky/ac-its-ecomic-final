@@ -1,6 +1,6 @@
 import { canonicalRombel } from "../utils/classLabel";
 import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
-import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
+import { auth, db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 
 const CLASSES = "classes_v3";
 const TEACHER_CODES = "teacherRegistrationCodes_v3";
@@ -8,7 +8,7 @@ const TEACHER_CODES = "teacherRegistrationCodes_v3";
 function localRead(key, fallback = []) { try { const raw = localStorage.getItem(`acits-access:${key}`); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } }
 function localWrite(key, value) { try { localStorage.setItem(`acits-access:${key}`, JSON.stringify(value)); } catch {} }
 function localUpsert(key, item) { const rows = localRead(key, []); localWrite(key, [...rows.filter(x => x.id !== item.id), item]); }
-async function ready() { return Boolean(firebaseEnabled && db && await ensureFirebaseAuth()); }
+async function ready() { return Boolean(firebaseEnabled && db && await ensureFirebaseAuth() && auth?.currentUser && !auth.currentUser.isAnonymous); }
 
 export async function createTeacherRegistrationCode(adminUid, meta = {}) {
   const code = `GURU-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -57,29 +57,31 @@ export async function createTeacherClass(teacher, data = {}) {
   const duplicate = existing.find(x => x.school === (data.school || teacher.school || "") && x.educationLevel === (data.educationLevel || "SMA") && x.grade === (data.grade || "X") && canonicalRombel(x.grade, x.rombel) === canonicalRombel(data.grade || "X", data.rombel || "1") && x.active !== false);
   if (duplicate) return duplicate;
   const id = `class-${teacher.uid}-${Date.now()}`;
-  const item = { id, teacherUid: teacher.uid, teacherName: teacher.name || "Guru", school: data.school || teacher.school || "", educationLevel: data.educationLevel || "SMA", grade: data.grade || "X", rombel: canonicalRombel(data.grade || "X", data.rombel || "1"), name: canonicalRombel(data.grade || "X", data.rombel || "1"), active: true, enrollmentOpen: true, createdAt: new Date().toISOString() };
+  const rombel=canonicalRombel(data.grade || "X", data.rombel || "1");
+  const item = { id, teacherUid: teacher.uid, teacherName: teacher.name || "Guru", school: data.school || teacher.school || "", educationLevel: data.educationLevel || "SMA", grade: data.grade || "X", rombel, name: rombel, active: true, enrollmentOpen: true, createdAt: new Date().toISOString() };
+  if (firebaseEnabled) {
+    if (!(await ready())) throw new Error("Firebase Auth Guru belum siap. Silakan login ulang.");
+    await setDoc(doc(db, CLASSES, id), item, { merge: true });
+  }
   localUpsert("classes", item);
-  if (await ready()) { await setDoc(doc(db, CLASSES, id), item, { merge: true }); }
   return item;
 }
 
 export async function updateTeacherClass(id, patch = {}) {
   if (!id) throw new Error("ID kelas tidak ditemukan.");
-  const current = localRead("classes", []).find(x => x.id === id) || {};
+  const current = localRead("classes", []).find(x => x.id === id) || { id };
   const next = { ...current, ...patch };
   if (Object.prototype.hasOwnProperty.call(patch, "rombel")) {
     next.rombel = canonicalRombel(next.grade || "X", patch.rombel);
     next.name = next.rombel;
   }
-  localUpsert("classes", next);
-  if (await ready()) {
-    const cloudPatch = { ...patch };
-    if (Object.prototype.hasOwnProperty.call(patch, "rombel")) {
-      cloudPatch.rombel = next.rombel;
-      cloudPatch.name = next.name;
-    }
+  const cloudPatch = { ...patch };
+  if (Object.prototype.hasOwnProperty.call(patch, "rombel")) { cloudPatch.rombel=next.rombel; cloudPatch.name=next.name; }
+  if (firebaseEnabled) {
+    if (!(await ready())) throw new Error("Firebase Auth Guru belum siap. Silakan login ulang.");
     await updateDoc(doc(db, CLASSES, id), cloudPatch);
   }
+  localUpsert("classes", next);
   return next;
 }
 
@@ -95,7 +97,10 @@ export async function setTeacherClassEnrollment(id, enrollmentOpen) {
 
 export async function deleteTeacherClass(id) {
   if (!id) return false;
-  if (await ready()) await deleteDoc(doc(db, CLASSES, id));
+  if (firebaseEnabled) {
+    if (!(await ready())) throw new Error("Firebase Auth Guru belum siap. Silakan login ulang.");
+    await deleteDoc(doc(db, CLASSES, id));
+  }
   const rows = localRead("classes", []);
   localWrite("classes", rows.filter(x => x.id !== id));
   return true;
@@ -103,8 +108,15 @@ export async function deleteTeacherClass(id) {
 
 export async function listClassesForTeacher(teacherUid) {
   if (!teacherUid) return [];
-  if (await ready()) {
-    try { const snap = await getDocs(query(collection(db, CLASSES), where("teacherUid", "==", teacherUid))); const rows = snap.docs.map(d => ({ id:d.id, ...d.data() })); for (const row of rows) { const canonical = canonicalRombel(row.grade, row.rombel); if (canonical !== row.rombel) { try { await updateDoc(doc(db, CLASSES, row.id), { rombel: canonical, name: canonical }); row.rombel = canonical; row.name = canonical; } catch (e) { console.warn("Gagal migrasi rombel kelas", row.id, e); } } } return rows.sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel))); } catch (e) { console.warn(e); }
+  if (firebaseEnabled) {
+    if (!(await ready()) || auth.currentUser.uid !== teacherUid) throw new Error("AUTH_SESSION_MISMATCH");
+    const snap = await getDocs(query(collection(db, CLASSES), where("teacherUid", "==", teacherUid)));
+    const rows = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    for (const row of rows) {
+      const canonical = canonicalRombel(row.grade, row.rombel);
+      if (canonical !== row.rombel) { try { await updateDoc(doc(db, CLASSES, row.id), { rombel: canonical, name: canonical }); row.rombel=canonical; row.name=canonical; } catch(e){ console.warn("Gagal migrasi rombel kelas",row.id,e); } }
+    }
+    return rows.sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel)));
   }
   return localRead("classes", []).filter(x => x.teacherUid === teacherUid);
 }
@@ -139,27 +151,17 @@ export async function findOpenClass({ school, educationLevel, grade, rombel }) {
     canonicalRombel(x.grade, x.rombel) === targetRombel
   ) || null;
 
-  if (await ready()) {
-    // IMPORTANT: the current Firestore rules only allow a student to read
-    // classes that are active AND open. Query those two fields first so the
-    // query is provably allowed by Firestore Rules. We deliberately do not
-    // put school/grade/rombel into the Firestore query because old class
-    // documents may use slightly different labels (e.g. X 1 vs 1).
+  if (firebaseEnabled) {
+    if (!(await ready())) throw new Error("Firebase Auth belum siap.");
     try {
-      const q = query(
-        collection(db, CLASSES),
-        where("active", "==", true),
-        where("enrollmentOpen", "==", true)
-      );
+      const q = query(collection(db, CLASSES), where("active", "==", true), where("enrollmentOpen", "==", true));
       const snap = await getDocs(q);
-      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      return matches(rows);
+      return matches(snap.docs.map(d => ({ id:d.id, ...d.data() })));
     } catch (e) {
       console.error("CLASS_LOOKUP_FIRESTORE_ERROR", e);
       throw e;
     }
   }
-
   return matches(localRead("classes", []));
 }
 

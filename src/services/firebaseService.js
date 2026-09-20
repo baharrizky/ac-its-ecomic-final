@@ -49,24 +49,13 @@ async function waitForFirebaseAuthReady() {
 
 export async function ensureFirebaseAuth() {
   if (!firebaseEnabled || !auth) return false;
-
-  // Firebase restores a persisted session asynchronously after a hard refresh.
-  // Wait for that first; otherwise media reads can run while auth.currentUser is
-  // still null and permanently resolve to the "image unavailable" fallback.
   const restoredUser = await waitForFirebaseAuthReady();
-  if (restoredUser || auth.currentUser) return true;
-
-  if (!authPromise) {
-    authPromise = signInAnonymously(auth).then(() => true).catch((error) => {
-      authPromise = null;
-      console.warn("Firebase anonymous auth belum aktif:", error);
-      return false;
-    });
-  }
-  return authPromise;
+  // Firebase is the source of truth. Do NOT silently create an anonymous
+  // session because that makes a persisted local Teacher session look valid
+  // while Firestore correctly denies Teacher-only queries.
+  return Boolean(restoredUser || auth.currentUser);
 }
 
-export { app, auth, db, storage };
 export async function getFirebaseIdToken() {
   if (!(await ensureFirebaseAuth()) || !auth?.currentUser) return null;
   return auth.currentUser.getIdToken();

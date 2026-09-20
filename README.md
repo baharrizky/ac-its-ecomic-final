@@ -1,15 +1,21 @@
-V10.2 — Teacher student query fix
+# AC-ITS E-Comic V11 — Integrated Teacher Data Core
 
-Replace:
-src/services/authService.js
+This patch fixes the underlying Teacher integration instead of patching individual pages.
 
-Root cause fixed:
-- Firestore rules for users require a readable student document to satisfy role == student plus classTeacherUid == current teacher (or the classId branch).
-- V10.1 queried only classTeacherUid. Firestore can reject that query because Security Rules are not filters.
-- The UI caught permission-denied and returned [] so the dashboard displayed "Siswa terdaftar: 0" and AI Teaching Assistant displayed no students.
+## Critical change
+Firebase Authentication is now the source of truth. The app no longer silently signs a stale local Teacher session into an anonymous Firebase account.
 
-V10.2 queries both:
-where("role", "==", "student")
-where("classTeacherUid", "==", teacherUid)
+Teacher data is loaded through one central bundle:
+- classes_v3
+- users (student + classTeacherUid)
+- studentModels_v2
+- attempts_v2
+- learningEvents_v2
+- reflections_v2
+- attendance_v2
+- examResults_v2
 
-It also logs TEACHER_AUTH_UID_MISMATCH if the persisted local session UID differs from the Firebase Auth UID, which is another important diagnostic case.
+All Teacher pages consume the same class roster and student model data.
+
+## Important
+After deployment, log out of the current Teacher account and log in again once. This refreshes Firebase Auth so the browser session UID matches the Teacher document UID.

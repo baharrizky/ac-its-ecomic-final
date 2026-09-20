@@ -31,7 +31,7 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.usedCount < get(/databases/$(database)/documents/teacherRegistrationCodes_v3/$(request.resource.data.teacherInviteCodeId)).data.maxUses
           )
         );
-      allow read: if isAdmin() || request.auth.uid == uid || (isTeacher() && resource.data.role == 'student' && (resource.data.classTeacherUid == request.auth.uid || (resource.data.classId != null && exists(/databases/$(database)/documents/classes_v3/$(resource.data.classId)) && get(/databases/$(database)/documents/classes_v3/$(resource.data.classId)).data.teacherUid == request.auth.uid)));
+      allow read: if isAdmin() || request.auth.uid == uid || (isTeacher() && resource.data.classTeacherUid == request.auth.uid);
       allow update: if isAdmin() || (request.auth.uid == uid && request.resource.data.role == resource.data.role && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','subtitle','educationLevel','grade','rombel','school','classId','classTeacherUid','classTeacherName','classJoinedAt'])) || (isTeacher() && resource.data.role == 'student' && resource.data.classTeacherUid == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['classId','classTeacherUid','classTeacherName','classJoinedAt']));
       allow delete: if isAdmin();
     }
