@@ -19,11 +19,11 @@ const SCHOOL_OPTIONS = {
   ]
 };
 const GRADE_OPTIONS = { SMP:["VII","VIII","IX"], SMA:["X","XI","XII"] };
-const ROMBEL_OPTIONS = Array.from({length:12},(_,i)=>String(i+1));
+const ROMBEL_OPTIONS = Array.from({length:12},(_,i)=>i+1);
 
 export default function RegistrationPage({onRegister,onBack}){
   const [role,setRole]=useState("student");
-  const [form,setForm]=useState({name:"",email:"",password:"",confirmPassword:"",educationLevel:"SMA",grade:"X",rombel:"1",school:"",teacherInviteCode:""});
+  const [form,setForm]=useState({name:"",email:"",password:"",confirmPassword:"",educationLevel:"SMA",grade:"X",rombel:"X 1",school:"",teacherInviteCode:""});
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
   const set=(key,value)=>setForm(f=>({...f,[key]:value}));
@@ -48,9 +48,9 @@ export default function RegistrationPage({onRegister,onBack}){
         <form onSubmit={submit}>
           <label className="label">Nama lengkap</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder={role==="teacher"?"Nama guru":"Nama siswa"} autoComplete="name"/>
           <label className="label">Email</label><input type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="nama@email.com" autoComplete="email"/>
-          <div className="register-grid"><div><label className="label">Jenjang</label><select value={form.educationLevel} onChange={e=>{const level=e.target.value;setForm(f=>({...f,educationLevel:level,grade:GRADE_OPTIONS[level][0],school:"",rombel:"1"}))}}><option>SMP</option><option>SMA</option></select></div><div><label className="label">Tingkat kelas</label><select value={form.grade} onChange={e=>set("grade",e.target.value)}>{GRADE_OPTIONS[form.educationLevel].map(g=><option key={g}>{g}</option>)}</select></div></div>
+          <div className="register-grid"><div><label className="label">Jenjang</label><select value={form.educationLevel} onChange={e=>{const level=e.target.value;setForm(f=>({...f,educationLevel:level,grade:GRADE_OPTIONS[level][0],school:"",rombel:`${GRADE_OPTIONS[level][0]} 1`}))}}><option>SMP</option><option>SMA</option></select></div><div><label className="label">Tingkat kelas</label><select value={form.grade} onChange={e=>{const grade=e.target.value;setForm(f=>({...f,grade,rombel:`${grade} 1`}))}}>{GRADE_OPTIONS[form.educationLevel].map(g=><option key={g}>{g}</option>)}</select></div></div>
           <label className="label">Sekolah</label><select required value={form.school} onChange={e=>set("school",e.target.value)}><option value="">Pilih sekolah {form.educationLevel}</option>{SCHOOL_OPTIONS[form.educationLevel].map(school=><option key={school} value={school}>{school}</option>)}<option value="Sekolah lainnya">Sekolah lainnya</option></select>
-          {role==="student" && <div className="register-grid"><div><label className="label">Rombel</label><select value={form.rombel} onChange={e=>set("rombel",e.target.value)}>{ROMBEL_OPTIONS.map(n=><option key={n} value={n}>{form.grade} {n}</option>)}</select></div><div><label className="label">Contoh kelas</label><div className="field-preview">{form.grade} {form.rombel}</div></div></div>}
+          {role==="student" && <div className="register-grid"><div><label className="label">Rombel</label><select value={form.rombel} onChange={e=>set("rombel",e.target.value)}>{ROMBEL_OPTIONS.map(n=>{const value=`${form.grade} ${n}`;return <option key={value} value={value}>{value}</option>})}</select></div><div><label className="label">Contoh kelas</label><div className="field-preview">{form.rombel}</div></div></div>}
           {role==="teacher" && <><label className="label">Kode Akses Admin</label><input value={form.teacherInviteCode} onChange={e=>set("teacherInviteCode",e.target.value.toUpperCase())} placeholder="Masukkan kode dari Admin" autoComplete="off"/><div className="subtle" style={{marginTop:-6,marginBottom:10}}>Guru hanya dapat mendaftar dengan kode yang diterbitkan Admin.</div></>}<label className="label">Password</label><input type="password" value={form.password} onChange={e=>set("password",e.target.value)} placeholder="Minimal 6 karakter" autoComplete="new-password"/>
           <label className="label">Konfirmasi password</label><input type="password" value={form.confirmPassword} onChange={e=>set("confirmPassword",e.target.value)} placeholder="Ulangi password" autoComplete="new-password"/>
           {error&&<div className="login-error">{error}</div>}

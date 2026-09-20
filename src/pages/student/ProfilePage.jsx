@@ -1,3 +1,4 @@
+import { classLabel } from "../../utils/classLabel";
 import React from "react";
 import { User, Mail, School, ShieldCheck, Users } from "lucide-react";
 export default function ProfilePage({session}){

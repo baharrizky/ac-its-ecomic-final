@@ -1,3 +1,4 @@
+import { classLabel } from "../../utils/classLabel";
 import React, { useMemo, useState } from "react";
 import { CheckCircle2, Clock3, CalendarDays } from "lucide-react";
 
@@ -23,7 +24,7 @@ export default function AttendancePage({ session, records = [], onCheckIn }) {
     <div className="stats-row">
       <div className="ac-stat"><div className="stat-icon green"><CheckCircle2 size={20}/></div><div><span>Hari hadir</span><strong>{mine.filter(r=>r.status === "Hadir").length}</strong></div></div>
       <div className="ac-stat"><div className="stat-icon blue"><CalendarDays size={20}/></div><div><span>Hari ini</span><strong>{already ? "Hadir" : "Belum"}</strong></div></div>
-      <div className="ac-stat"><div className="stat-icon orange"><Clock3 size={20}/></div><div><span>Rombel</span><strong>{session?.grade ? `${session.grade} ${session.rombel || ""}` : "-"}</strong></div></div>
+      <div className="ac-stat"><div className="stat-icon orange"><Clock3 size={20}/></div><div><span>Rombel</span><strong>{session?.grade ? classLabel(session.grade, session.rombel) : "-"}</strong></div></div>
     </div>
     <div className="card" style={{marginBottom:16}}>
       <div className="section-head"><div><h2>Presensi Hari Ini</h2><span>{today}</span></div><button className="btn-primary" disabled={already} onClick={checkIn}>{already ? "Sudah Hadir" : "✓ Presensi Sekarang"}</button></div>

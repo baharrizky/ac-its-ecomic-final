@@ -1,3 +1,4 @@
+import { canonicalRombel } from "../utils/classLabel";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword,
   sendPasswordResetEmail, signOut, updateProfile, deleteUser } from "firebase/auth";
 import { collection, doc, getDocs, getDoc, query, setDoc, where, deleteDoc } from "firebase/firestore";
@@ -23,7 +24,7 @@ function makeSession(profile, uid = null) {
     email: profile.email,
     educationLevel: profile.educationLevel || null,
     grade: profile.grade || null,
-    rombel: profile.rombel || null,
+    rombel: profile.rombel ? canonicalRombel(profile.grade, profile.rombel) : null,
     school: profile.school || "",
     teacherUid: profile.teacherUid || profile.classTeacherUid || null,
     classId: profile.classId || null,
@@ -58,7 +59,7 @@ export async function login(role, email, password){
         return { ok:false, message:`Akun ini terdaftar sebagai ${roleLabel}. Silakan pilih login yang sesuai.` };
       }
       if (profile.role === "student" && !profile.classId) {
-        const match = await findOpenClass({ school: profile.school || "", educationLevel: profile.educationLevel, grade: profile.grade, rombel: profile.rombel || "1" });
+        const match = await findOpenClass({ school: profile.school || "", educationLevel: profile.educationLevel, grade: profile.grade, rombel: canonicalRombel(profile.grade, profile.rombel || "1") });
         if (match) {
           profile = { ...profile, classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt: new Date().toISOString() };
           if (db) await setDoc(doc(db, "users", credential.user.uid), { classId: match.id, classTeacherUid: match.teacherUid, classTeacherName: match.teacherName || "", classJoinedAt: profile.classJoinedAt }, { merge: true });
@@ -117,7 +118,7 @@ export async function registerAccount(form){
           school: form.school.trim(),
           educationLevel: form.educationLevel,
           grade: form.grade,
-          rombel: form.rombel || "1",
+          rombel: canonicalRombel(form.grade, form.rombel || "1"),
         });
 
         // Rules users/{uid} memang mewajibkan classId dan classTeacherUid.
@@ -126,7 +127,7 @@ export async function registerAccount(form){
           try { await deleteUser(credential.user); } catch {}
           return {
             ok:false,
-            message:"Kelas tidak ditemukan di Firestore. Pastikan kelas Guru tersimpan di Firebase dan status pendaftarannya terbuka."
+            message:"Kelas yang dipilih belum dibuka oleh Guru. Pilih kelas lain atau hubungi Guru/Admin."
           };
         }
 
@@ -138,7 +139,7 @@ export async function registerAccount(form){
           subtitle:"Siswa",
           educationLevel: form.educationLevel,
           grade: form.grade,
-          rombel: form.rombel || "1",
+          rombel: canonicalRombel(form.grade, form.rombel || "1"),
           school: form.school.trim(),
           classId: classMatch.id,
           classTeacherUid: classMatch.teacherUid,
@@ -147,18 +148,7 @@ export async function registerAccount(form){
           createdAt: now,
         };
 
-        // Simpan profil siswa sebagai langkah wajib. Jika Firestore menolak,
-        // jangan membuat sesi lokal seolah-olah siswa sudah terdaftar.
         await setDoc(doc(db, "users", credential.user.uid), profile, { merge:true });
-
-        const savedProfileSnap = await getDoc(doc(db, "users", credential.user.uid));
-        if (!savedProfileSnap.exists()) {
-          throw new Error("Profil siswa tidak berhasil dibuat di Firestore.");
-        }
-        const savedProfile = savedProfileSnap.data();
-        if (savedProfile.classId !== classMatch.id || savedProfile.classTeacherUid !== classMatch.teacherUid) {
-          throw new Error("Profil siswa tersimpan, tetapi hubungan kelas dan Guru tidak sesuai.");
-        }
 
         // Inisialisasi Student Model agar akun langsung siap dipakai
         // oleh alur ITS/adaptive learning.
@@ -173,12 +163,7 @@ export async function registerAccount(form){
           updatedAt: now,
         }, { merge:true });
 
-        const modelSnap = await getDoc(doc(db, "studentModels_v2", credential.user.uid));
-        if (!modelSnap.exists()) {
-          throw new Error("Student Model tidak berhasil dibuat di Firestore.");
-        }
-
-        const session = makeSession(savedProfile, credential.user.uid);
+        const session = makeSession(profile, credential.user.uid);
         localStorage.setItem(KEY, JSON.stringify(session));
         return { ok:true, session };
       }
@@ -234,8 +219,7 @@ export async function registerAccount(form){
         } catch {}
       }
       if (error?.code !== "auth/operation-not-allowed") {
-        const custom = error?.message && !String(error.message).startsWith("Firebase") ? error.message : "";
-        return { ok:false, message: custom || firebaseMessage(error) };
+        return { ok:false, message: firebaseMessage(error) };
       }
     }
   }
@@ -247,7 +231,7 @@ export async function registerAccount(form){
       school: form.school?.trim() || "",
       educationLevel: form.educationLevel,
       grade: form.grade,
-      rombel: form.rombel || "1"
+      rombel: canonicalRombel(form.grade, form.rombel || "1")
     });
     if (!classMatch) return { ok:false, message:"Kelas yang dipilih belum dibuka oleh Guru. Pilih kelas lain atau hubungi Guru/Admin." };
   }
@@ -259,7 +243,7 @@ export async function registerAccount(form){
     subtitle: role === "teacher" ? "Guru" : "Siswa",
     educationLevel: role === "student" ? form.educationLevel : null,
     grade: role === "student" ? form.grade : null,
-    rombel: role === "student" ? (form.rombel || "1") : null,
+    rombel: role === "student" ? canonicalRombel(form.grade, form.rombel || "1") : null,
     school: form.school?.trim() || "",
     classId: classMatch?.id || null,
     classTeacherUid: classMatch?.teacherUid || null,

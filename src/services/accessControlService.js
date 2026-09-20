@@ -1,3 +1,4 @@
+import { canonicalRombel } from "../utils/classLabel";
 import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db, firebaseEnabled, ensureFirebaseAuth } from "./firebaseService";
 
@@ -8,43 +9,6 @@ function localRead(key, fallback = []) { try { const raw = localStorage.getItem(
 function localWrite(key, value) { try { localStorage.setItem(`acits-access:${key}`, JSON.stringify(value)); } catch {} }
 function localUpsert(key, item) { const rows = localRead(key, []); localWrite(key, [...rows.filter(x => x.id !== item.id), item]); }
 async function ready() { return Boolean(firebaseEnabled && db && await ensureFirebaseAuth()); }
-
-// Semua pembandingan kelas harus memakai nilai kanonik agar variasi tampilan
-// seperti "X 1", "X-1", atau "1" tidak membuat kelas yang sama dianggap berbeda.
-export function normalizeGrade(value) {
-  const s = String(value ?? "").trim().toUpperCase();
-  if (["7", "VII"].includes(s)) return "VII";
-  if (["8", "VIII"].includes(s)) return "VIII";
-  if (["9", "IX"].includes(s)) return "IX";
-  if (["10", "X"].includes(s)) return "X";
-  if (["11", "XI"].includes(s)) return "XI";
-  if (["12", "XII"].includes(s)) return "XII";
-  return s;
-}
-
-export function normalizeRombel(value, grade = "") {
-  const raw = String(value ?? "").trim().toUpperCase().replace(/[._-]+/g, " ").replace(/\s+/g, " ");
-  const normalizedGrade = normalizeGrade(grade);
-  const withoutGrade = normalizedGrade ? raw.replace(new RegExp(`^${normalizedGrade}\\s*`, "i"), "") : raw;
-  const match = withoutGrade.match(/\d+/);
-  return match ? String(Number(match[0])) : withoutGrade.trim();
-}
-
-export function normalizeSchool(value) {
-  let s = String(value ?? "").trim().toUpperCase().replace(/[._-]+/g, " ").replace(/\s+/g, " ");
-  // Samakan singkatan umum sekolah negeri: SMAN 5 -> SMA NEGERI 5,
-  // SMPN 5 -> SMP NEGERI 5.
-  s = s.replace(/^SMAN\s+(\d+)/, "SMA NEGERI $1");
-  s = s.replace(/^SMPN\s+(\d+)/, "SMP NEGERI $1");
-  return s;
-}
-
-function sameClass(a, b) {
-  return normalizeSchool(a.school) === normalizeSchool(b.school)
-    && normalizeGrade(a.grade) === normalizeGrade(b.grade)
-    && normalizeRombel(a.rombel, a.grade) === normalizeRombel(b.rombel, b.grade)
-    && String(a.educationLevel || "").trim().toUpperCase() === String(b.educationLevel || "").trim().toUpperCase();
-}
 
 export async function createTeacherRegistrationCode(adminUid, meta = {}) {
   const code = `GURU-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -81,101 +45,41 @@ export async function consumeTeacherRegistrationCode(code, teacherUid) {
   const item = await getTeacherRegistrationCode(code);
   if (!item || item.active === false || (item.maxUses && Number(item.usedCount || 0) >= Number(item.maxUses))) return { ok: false, message: "Kode registrasi guru tidak valid, sudah digunakan, atau tidak aktif." };
   const next = { ...item, usedCount: Number(item.usedCount || 0) + 1, usedBy: [...(item.usedBy || []), teacherUid] };
+  localUpsert("teacher-codes", next);
   if (await ready()) {
-    try {
-      await updateDoc(doc(db, TEACHER_CODES, item.id), { usedCount: next.usedCount, usedBy: next.usedBy });
-      localUpsert("teacher-codes", next);
-    } catch (e) { return { ok:false, message:"Kode valid tetapi gagal dikunci. Coba lagi." }; }
-  } else {
-    localUpsert("teacher-codes", next);
+    try { await updateDoc(doc(db, TEACHER_CODES, item.id), { usedCount: next.usedCount, usedBy: next.usedBy }); } catch (e) { return { ok:false, message:"Kode valid tetapi gagal dikunci. Coba lagi." }; }
   }
   return { ok:true, item:next };
 }
 
 export async function createTeacherClass(teacher, data = {}) {
-  const desired = {
-    school: data.school || teacher.school || "",
-    educationLevel: String(data.educationLevel || "SMA").trim().toUpperCase(),
-    grade: normalizeGrade(data.grade || "X"),
-    rombel: normalizeRombel(data.rombel || "1", data.grade || "X"),
-  };
   const existing = await listClassesForTeacher(teacher.uid);
-  const duplicate = existing.find(x => x.active !== false && sameClass(x, desired));
+  const duplicate = existing.find(x => x.school === (data.school || teacher.school || "") && x.educationLevel === (data.educationLevel || "SMA") && x.grade === (data.grade || "X") && canonicalRombel(x.grade, x.rombel) === canonicalRombel(data.grade || "X", data.rombel || "1") && x.active !== false);
   if (duplicate) return duplicate;
-
   const id = `class-${teacher.uid}-${Date.now()}`;
-  const item = {
-    id,
-    teacherUid: teacher.uid,
-    teacherName: teacher.name || "Guru",
-    school: desired.school,
-    educationLevel: desired.educationLevel,
-    grade: desired.grade,
-    rombel: desired.rombel,
-    name: `${desired.grade} ${desired.rombel}`,
-    active: true,
-    enrollmentOpen: true,
-    createdAt: new Date().toISOString()
-  };
-
-  // Firestore adalah sumber kebenaran untuk data lintas akun.
-  if (await ready()) {
-    await setDoc(doc(db, CLASSES, id), item, { merge: true });
-    localUpsert("classes", item);
-  } else {
-    localUpsert("classes", item);
-  }
+  const item = { id, teacherUid: teacher.uid, teacherName: teacher.name || "Guru", school: data.school || teacher.school || "", educationLevel: data.educationLevel || "SMA", grade: data.grade || "X", rombel: canonicalRombel(data.grade || "X", data.rombel || "1"), name: canonicalRombel(data.grade || "X", data.rombel || "1"), active: true, enrollmentOpen: true, createdAt: new Date().toISOString() };
+  localUpsert("classes", item);
+  if (await ready()) { await setDoc(doc(db, CLASSES, id), item, { merge: true }); }
   return item;
 }
 
 export async function listClassesForTeacher(teacherUid) {
   if (!teacherUid) return [];
   if (await ready()) {
-    try {
-      const snap = await getDocs(query(collection(db, CLASSES), where("teacherUid", "==", teacherUid)));
-      return snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel)));
-    } catch (e) { console.warn("Gagal membaca kelas Guru dari Firestore:", e); return []; }
+    try { const snap = await getDocs(query(collection(db, CLASSES), where("teacherUid", "==", teacherUid))); const rows = snap.docs.map(d => ({ id:d.id, ...d.data() })); for (const row of rows) { const canonical = canonicalRombel(row.grade, row.rombel); if (canonical !== row.rombel) { try { await updateDoc(doc(db, CLASSES, row.id), { rombel: canonical, name: canonical }); row.rombel = canonical; row.name = canonical; } catch (e) { console.warn("Gagal migrasi rombel kelas", row.id, e); } } } return rows.sort((a,b)=>String(a.grade+a.rombel).localeCompare(String(b.grade+b.rombel))); } catch (e) { console.warn(e); }
   }
   return localRead("classes", []).filter(x => x.teacherUid === teacherUid);
 }
 
 export async function findOpenClass({ school, educationLevel, grade, rombel }) {
-  const requested = {
-    school: String(school || "").trim(),
-    educationLevel: String(educationLevel || "").trim().toUpperCase(),
-    grade: normalizeGrade(grade),
-    rombel: normalizeRombel(rombel, grade),
-  };
-
-  const matches = rows => rows.find(x =>
-    x.active !== false &&
-    x.enrollmentOpen !== false &&
-    sameClass(x, requested)
-  ) || null;
-
+  const targetRombel = canonicalRombel(grade || "X", rombel || "1"); const matches = rows => rows.find(x => x.active !== false && x.enrollmentOpen !== false && x.school === school && x.educationLevel === educationLevel && x.grade === grade && canonicalRombel(x.grade, x.rombel) === targetRombel);
   if (await ready()) {
     try {
-      // Hanya query kelas yang pendaftarannya terbuka. Setelah itu sekolah,
-      // jenjang, tingkat, dan rombel dicocokkan di client dengan normalisasi.
-      // Ini menghindari mismatch "SMAN 5" vs "SMA Negeri 5" dan "X 1" vs "1".
-      const snap = await getDocs(query(
-        collection(db, CLASSES),
-        where("active", "==", true),
-        where("enrollmentOpen", "==", true)
-      ));
-      const rows = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      const match = matches(rows);
-      if (match) return match;
-      console.warn("Kelas terbuka tidak cocok dengan pilihan siswa", { requested, available: rows.map(x => ({ id:x.id, school:x.school, educationLevel:x.educationLevel, grade:x.grade, rombel:x.rombel, active:x.active, enrollmentOpen:x.enrollmentOpen })) });
-      return null;
-    } catch (e) {
-      console.error("findOpenClass Firestore error:", e);
-      // Jangan fallback ke localStorage saat Firebase aktif. Local-only class
-      // tidak bisa dipakai untuk menghubungkan akun Guru dan Siswa yang berbeda.
-      return null;
-    }
+      const q = query(collection(db, CLASSES), where("school", "==", school), where("educationLevel", "==", educationLevel), where("grade", "==", grade), where("rombel", "==", targetRombel));
+      const snap = await getDocs(q); return snap.docs.map(d => ({ id:d.id, ...d.data() })).find(x => x.active !== false && x.enrollmentOpen !== false) || null;
+    } catch (e) { console.warn(e); }
   }
-  return matches(localRead("classes", []));
+  return matches(localRead("classes", [])) || null;
 }
 
 export async function listAllClasses() {
