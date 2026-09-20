@@ -278,7 +278,24 @@ export async function getRegisteredStudents(teacherUid = null, teacherClasses = 
       // only constrained by classId can be rejected by the /users rule even
       // when the classId belongs to the teacher.
       if (teacherUid) {
-        const q = query(collection(db, "users"), where("classTeacherUid", "==", teacherUid));
+        // IMPORTANT: Firestore Security Rules are not filters. The query must
+        // explicitly constrain role=student as well as classTeacherUid so the
+        // rules can prove every possible returned document is readable by the
+        // current teacher. Querying only classTeacherUid can result in
+        // permission-denied and the old code then appeared as "0 students".
+        if (!auth?.currentUser || auth.currentUser.uid !== teacherUid) {
+          console.error("TEACHER_AUTH_UID_MISMATCH", {
+            expectedTeacherUid: teacherUid,
+            firebaseAuthUid: auth?.currentUser?.uid || null,
+            isAnonymous: Boolean(auth?.currentUser?.isAnonymous),
+          });
+          return [];
+        }
+        const q = query(
+          collection(db, "users"),
+          where("role", "==", "student"),
+          where("classTeacherUid", "==", teacherUid)
+        );
         const snap = await getDocs(q);
         return snap.docs
           .map(d=>({uid:d.id,...d.data()}))
