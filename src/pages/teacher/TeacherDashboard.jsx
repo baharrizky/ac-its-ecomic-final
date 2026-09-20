@@ -47,6 +47,11 @@ export default function TeacherDashboard({
  const selectedStudent=
    scopedStudents.find(s=>s.uid===selectedUid)||
    scopedStudents[0];
+ const masteryRows=useMemo(()=>{const map={};scopedStudents.forEach(s=>{const m=byUid.get(s.uid)||s.model||{};Object.entries(m.concepts||{}).forEach(([id,p])=>{if(!map[id])map[id]=[];map[id].push(Number(p?.mastery||0));});});return Object.entries(map).map(([id,v])=>({id,value:Math.round(v.reduce((a,b)=>a+b,0)/v.length*100)})).sort((a,b)=>b.value-a.value)},[scopedStudents,byUid]);
+ const topMastery=masteryRows.slice(0,3);
+ const misconceptionRows=useMemo(()=>{const map={};scopedStudents.forEach(s=>(byUid.get(s.uid)||s.model||{}).misconceptions||[]).filter(m=>!m.resolved).forEach(m=>{const key=m.tag||"UNCLASSIFIED";map[key]=(map[key]||0)+1;});return Object.entries(map).map(([tag,count])=>({tag,count})).sort((a,b)=>b.count-a.count)},[scopedStudents,byUid]);
+ const topMisconceptions=misconceptionRows.slice(0,3);
+ const lowestMisconceptions=misconceptionRows.slice().sort((a,b)=>a.count-b.count).slice(0,3);
 
  async function recommend(){
    if(!selectedStudent||!onAIRecommend)return;
@@ -339,6 +344,18 @@ export default function TeacherDashboard({
          </div>
        )}
 
+     </div>
+
+     <div className="dashboard-grid" style={{marginTop:18}}>
+       <section className="card">
+         <div className="section-head"><div><h2>Top Mastery</h2><span>Konsep yang paling dikuasai kelas</span></div></div>
+         {topMastery.length?<div className="list">{topMastery.map(x=><div className="list-item" key={x.id}><span><strong>{x.id}</strong></span><b>{x.value}%</b></div>)}</div>:<div className="empty-state"><strong>Belum ada data mastery.</strong><span>Data muncul setelah siswa belajar dan mengerjakan latihan.</span></div>}
+       </section>
+       <aside className="card">
+         <div className="section-head"><div><h2>Miskonsepsi Kelas</h2><span>Masalah yang paling sering muncul</span></div></div>
+         {topMisconceptions.length?<div className="list">{topMisconceptions.map(x=><div className="list-item" key={x.tag}><span>{x.tag}</span><b>{x.count}</b></div>)}</div>:<div className="empty-state"><strong>Belum ada miskonsepsi aktif.</strong></div>}
+         {lowestMisconceptions.length>0&&<div className="subtle" style={{marginTop:10}}>Terendah: {lowestMisconceptions.map(x=>`${x.tag} (${x.count})`).join(" · ")}</div>}
+       </aside>
      </div>
 
      <div
