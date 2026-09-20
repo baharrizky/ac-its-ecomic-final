@@ -1,21 +1,13 @@
-# AC-ITS E-Comic V11 — Integrated Teacher Data Core
+# AC-ITS E-Comic V11 Build Fix
 
-This patch fixes the underlying Teacher integration instead of patching individual pages.
+Replace:
+`src/services/firebaseService.js`
 
-## Critical change
-Firebase Authentication is now the source of truth. The app no longer silently signs a stale local Teacher session into an anonymous Firebase account.
+Reason:
+V11 imported `auth` and `db` from firebaseService.js, but the V11 file did not export those bindings. This caused Vercel/Rollup build error:
+`"db" is not exported by "src/services/firebaseService.js"`.
 
-Teacher data is loaded through one central bundle:
-- classes_v3
-- users (student + classTeacherUid)
-- studentModels_v2
-- attempts_v2
-- learningEvents_v2
-- reflections_v2
-- attendance_v2
-- examResults_v2
+This patch restores the named exports:
+`app`, `auth`, `db`, `storage`.
 
-All Teacher pages consume the same class roster and student model data.
-
-## Important
-After deployment, log out of the current Teacher account and log in again once. This refreshes Firebase Auth so the browser session UID matches the Teacher document UID.
+No anonymous authentication is re-enabled. Firebase Auth remains the source of truth.
