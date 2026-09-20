@@ -269,26 +269,25 @@ export async function registerAccount(form){
   return { ok:true, session };
 }
 
-export async function getRegisteredStudents(teacherUid = null){
+export async function getRegisteredStudents(teacherUid = null, teacherClasses = []){
   if (firebaseEnabled && db) {
     await ensureFirebaseAuth();
     try {
-      // Query only one equality field when scoped to a teacher. This avoids
-      // unnecessary composite-index requirements. The role is filtered in JS.
-      const q = teacherUid
-        ? query(collection(db, "users"), where("classTeacherUid", "==", teacherUid))
-        : query(collection(db, "users"), where("role", "==", "student"));
+      if (teacherUid && Array.isArray(teacherClasses) && teacherClasses.length) {
+        const classIds = teacherClasses.map(c=>c.id).filter(Boolean).slice(0,30);
+        const q = classIds.length ? query(collection(db, "users"), where("classId", "in", classIds)) : query(collection(db, "users"), where("classTeacherUid", "==", teacherUid));
+        const snap = await getDocs(q);
+        return snap.docs.map(d=>({uid:d.id,...d.data()})).filter(s=>s.role==="student" && (s.classTeacherUid===teacherUid || classIds.includes(s.classId)));
+      }
+      const q = teacherUid ? query(collection(db, "users"), where("classTeacherUid", "==", teacherUid)) : query(collection(db, "users"), where("role", "==", "student"));
       const snap = await getDocs(q);
-      return snap.docs
-        .map(d => ({ uid: d.id, ...d.data() }))
-        .filter(s => s.role === "student");
+      return snap.docs.map(d=>({uid:d.id,...d.data()})).filter(s=>s.role==="student");
     } catch (error) {
       console.warn("Gagal mengambil daftar siswa dari Firebase:", error);
     }
   }
-  return readRegisteredAccounts()
-    .filter(a => a.role === "student" && (!teacherUid || a.classTeacherUid === teacherUid))
-    .map(({ password, ...profile }) => profile);
+  const classIds=new Set((teacherClasses||[]).map(c=>c.id));
+  return readRegisteredAccounts().filter(a=>a.role==="student" && (!teacherUid || a.classTeacherUid===teacherUid || classIds.has(a.classId))).map(({password,...profile})=>profile);
 }
 
 export function updateSessionProfile(patch){

@@ -1,22 +1,23 @@
-PATCH V9.1 — BUILD FIX + CLASS MANAGEMENT + ROMBEL DISPLAY
-
-This is a corrected V9 patch. It fixes the V9 build error in ProfilePage.jsx caused by a duplicate classLabel import.
+# AC-ITS V10 — Class-scoped Teacher Workspace
 
 Replace these files:
-- src/services/accessControlService.js
+- src/App.jsx
 - src/services/authService.js
+- src/services/accessControlService.js
+- src/pages/teacher/TeacherDashboard.jsx
+- src/pages/teacher/AnalyticsPage.jsx
+- src/pages/teacher/ComicManagement.jsx
 - src/pages/teacher/TeacherDataPages.jsx
-- src/pages/student/ProfilePage.jsx
-- src/utils/classLabel.js
+- firestore.rules
 
-V9 features retained:
-1. Canonical class labels such as X 1; prevents X X 1 display.
-2. Class Management: Aktifkan/Nonaktifkan, Buka/Tutup pendaftaran, Hapus.
-3. Class status changes persist to Firestore.
-4. Teacher student lookup uses a single equality query scoped by teacher.
-5. Existing legacy rombel values are canonicalized when the teacher class list is loaded.
+Main changes:
+- Teacher dashboard refreshes class/student data on mount and has a manual refresh button.
+- Student lookup for a teacher can use the teacher's classId list, not only classTeacherUid.
+- Teacher Grades has School / Kelas / Rombel filters sourced from teacher classes.
+- Analytics has School / Kelas / Rombel filters sourced from teacher classes.
+- E-Comic management has School / Kelas / Rombel filters and creation is attached to one selected class.
+- Teacher attendance is filtered per School / Kelas / Rombel.
+- Firestore users read rule allows a teacher to read a student when the student's classId belongs to a class owned by that teacher.
+- Existing class format remains canonical (e.g. X 1), no X X 1 display.
 
-V9.1 build fix:
-- ProfilePage.jsx contains exactly one classLabel import.
-
-After deployment, hard-refresh the browser (Ctrl+Shift+R).
+IMPORTANT: deploy firestore.rules to Firebase, not only the React files to Vercel.
