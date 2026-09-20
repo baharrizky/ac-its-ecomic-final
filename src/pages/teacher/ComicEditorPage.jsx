@@ -10,6 +10,7 @@ export default function ComicEditorPage({ comic, onBack, onSave, session }) {
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [uploading, setUploading] = useState("");
   const [message, setMessage] = useState("");
+  const [characterInputs, setCharacterInputs] = useState({});
   const coverInputRef = useRef(null);
 
   if (!draft) return <div className="empty">E-Comic tidak ditemukan.</div>;
@@ -120,7 +121,20 @@ export default function ComicEditorPage({ comic, onBack, onSave, session }) {
                         <div className="field"><label className="label">Judul Panel</label><input value={p.title} onChange={e=>patchPanel(pi,{title:e.target.value})}/></div>
                         <div className="field"><label className="label">Narasi</label><textarea rows="2" value={p.narration} onChange={e=>patchPanel(pi,{narration:e.target.value})}/></div>
                         <div className="field"><label className="label">Dialog</label><textarea rows="2" value={p.dialogue} onChange={e=>patchPanel(pi,{dialogue:e.target.value})}/></div>
-                        <div className="field"><label className="label">Tokoh pada panel (pisahkan dengan koma)</label><input value={(p.characters||[]).join(", ")} onChange={e=>patchPanel(pi,{characters:e.target.value.split(",").map(x=>x.trim()).filter(Boolean)})} placeholder="Sari, Riko, Nenek Sari"/></div>
+                        <div className="field"><label className="label">Tokoh pada panel (pisahkan dengan koma)</label><input
+                            value={characterInputs[p.id] ?? (p.characters || []).join(", ")}
+                            onChange={e=>{
+                              const raw = e.target.value;
+                              setCharacterInputs(prev=>({...prev,[p.id]:raw}));
+                              patchPanel(pi,{characters:raw.split(",").map(x=>x.trim()).filter(Boolean)});
+                            }}
+                            onBlur={()=>setCharacterInputs(prev=>{
+                              const next={...prev};
+                              delete next[p.id];
+                              return next;
+                            })}
+                            placeholder="Sari, Riko, Nenek Sari"
+                          /></div>
                         <EquationEditor value={p.equation||""} onChange={value=>patchPanel(pi,{equation:value})} label="Persamaan panel (opsional)" />
                         <ConceptPicker value={p.conceptIds||[]} onChange={conceptIds=>patchPanel(pi,{conceptIds})} label="Konsep terkait" />
                       </div>
