@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
   const provider = (process.env.AI_PROVIDER || "gemini").toLowerCase();
   const model = provider === "gemini"
-    ? ("gemini-2.5-flash")
+    ? (process.env.GEMINI_MODEL || "gemini-3.8-flash")
     : (process.env.OPENAI_MODEL || "");
   const configured = provider === "gemini"
     ? Boolean(process.env.GEMINI_API_KEY)

@@ -4,6 +4,7 @@ import MediaImage from "../../components/media/MediaImage";
 import ConceptPicker from "../../components/common/ConceptPicker";
 import { saveLocalMedia } from "../../services/mediaService";
 import EquationEditor from "../../components/common/EquationEditor";
+import MathText from "../../components/common/MathText";
 
 export default function ComicEditorPage({ comic, onBack, onSave, session }) {
   const [draft, setDraft] = useState(() => comic ? JSON.parse(JSON.stringify(comic)) : null);
@@ -87,7 +88,7 @@ export default function ComicEditorPage({ comic, onBack, onSave, session }) {
         <div>
           <div className="card">
             <div className="field"><label className="label">Judul E-Comic</label><input value={draft.title} onChange={e=>setDraft({...draft,title:e.target.value})}/></div>
-            <div className="field"><label className="label">Deskripsi</label><textarea rows="3" value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})}/></div>
+            <div className="field"><label className="label">Deskripsi</label><textarea rows="3" value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})}/><div className="subtle" style={{marginTop:6}}>Pratinjau matematika: <MathText>{draft.description}</MathText></div></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div className="field"><label className="label">Jenjang</label><select value={draft.educationLevel||"SMA"} onChange={e=>setDraft({...draft,educationLevel:e.target.value})}><option>SMP</option><option>SMA</option></select></div>
               <div className="field"><label className="label">Kelas</label><select value={draft.grade} onChange={e=>setDraft({...draft,grade:e.target.value})}>{(draft.educationLevel==="SMP"?["VII","VIII","IX"]:["X","XI","XII"]).map(g=><option key={g}>{g}</option>)}</select></div>
@@ -119,8 +120,8 @@ export default function ComicEditorPage({ comic, onBack, onSave, session }) {
                       <div style={{minWidth:0}}>
                         <div className="field"><label className="label">Gambar Panel</label><input type="file" accept="image/*" onChange={e=>handlePanelUpload(pi,e.target.files?.[0])}/>{uploading===p.id&&<div className="subtle">Mengunggah...</div>}</div>
                         <div className="field"><label className="label">Judul Panel</label><input value={p.title} onChange={e=>patchPanel(pi,{title:e.target.value})}/></div>
-                        <div className="field"><label className="label">Narasi</label><textarea rows="2" value={p.narration} onChange={e=>patchPanel(pi,{narration:e.target.value})}/></div>
-                        <div className="field"><label className="label">Dialog</label><textarea rows="2" value={p.dialogue} onChange={e=>patchPanel(pi,{dialogue:e.target.value})}/></div>
+                        <div className="field"><label className="label">Narasi</label><textarea rows="2" value={p.narration} onChange={e=>patchPanel(pi,{narration:e.target.value})}/><div className="subtle" style={{marginTop:6}}>Pratinjau: <MathText>{p.narration}</MathText></div></div>
+                        <div className="field"><label className="label">Dialog</label><textarea rows="2" value={p.dialogue} onChange={e=>patchPanel(pi,{dialogue:e.target.value})}/><div className="subtle" style={{marginTop:6}}>Pratinjau: <MathText>{p.dialogue}</MathText></div></div>
                         <div className="field"><label className="label">Tokoh pada panel (pisahkan dengan koma)</label><input
                             value={characterInputs[p.id] ?? (p.characters || []).join(", ")}
                             onChange={e=>{

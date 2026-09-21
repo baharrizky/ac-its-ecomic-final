@@ -1,5 +1,5 @@
-const model = "gemini-2.5-flash";
-const fallbackModel = "gemini-2.5-flash-lite";
+const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
 const timeoutMs = Math.max(5000, Number(process.env.AI_TIMEOUT_MS || 20000));
 
 async function testModel(key, selectedModel) {

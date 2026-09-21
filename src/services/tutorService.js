@@ -72,10 +72,7 @@ async function prepareTutorPayload({ message, context, history }) {
       conceptId: context?.conceptId || "",
       conceptName: context?.conceptName || "",
       educationLevel: context?.educationLevel || "",
-      grade: context?.grade || "",
-      characters: Array.isArray(context?.characters) ? context.characters.slice(0, 20) : [],
-      storyContext: String(context?.storyContext || "").slice(0, 9000),
-      episodeDescription: String(context?.episodeDescription || "").slice(0, 1200)
+      grade: context?.grade || ""
     },
     history: (Array.isArray(history) ? history : []).slice(-4).map(m => ({
       role: m?.role === "user" ? "user" : "assistant",
@@ -146,16 +143,12 @@ export async function getTutorReply({ message, context, history }) {
       providerStatus: error?.providerStatus,
       message: error?.message
     });
-    const panel = context?.panelTitle ? ` di ${context.panelTitle}` : "";
-    const concept = context?.conceptName || "konsep yang sedang kamu pelajari";
-    const characters = Array.isArray(context?.characters) && context.characters.length
-      ? ` Tokoh yang terlibat: ${context.characters.join(", ")}.`
-      : "";
+    const concept = context?.conceptName || "konsep yang sedang dipelajari";
+    const comic = context?.comicTitle || "komik ini";
     return {
-      reply: `Hehe, kita bahas bareng ya 😄 Aku lagi fokus${panel} dan konsep ${concept}.${characters} Bagian mana yang paling bikin kamu penasaran? Ceritakan saja, nanti kita kupas dari panelnya pelan-pelan.`,
+      reply: `Tutor sedang tidak tersedia sementara. Kamu tetap bisa melanjutkan belajar dari ${comic}. Coba kirim pertanyaan sekali lagi.`,
       ai: false,
       unavailable: true,
-      fallback: true,
       aiError: error?.message || "AI unavailable",
       code: error?.code || "AI_UNAVAILABLE",
       status: error?.status || null
@@ -163,61 +156,57 @@ export async function getTutorReply({ message, context, history }) {
   }
 }
 
-
-
-export async function getAIHint({ question, hintIndex = 1, conceptId, conceptName, studentMastery = 0, misconceptionTag = null, context = {} }) {
-  try {
-    return await callEndpoint({
-      mode: "hint",
-      question,
-      hintIndex,
-      conceptId,
-      conceptName,
-      studentMastery,
-      misconceptionTag,
-      context
-    }, { timeoutMs: 18000 });
-  } catch (error) {
-    const explanation = String(question?.explanation || "").trim();
-    const fallback = hintIndex === 1
-      ? `Perhatikan informasi yang diberikan dan tentukan konsep ${conceptName || conceptId || "ini"} yang digunakan.`
-      : hintIndex === 2
-        ? (explanation ? `Gunakan ide pada pembahasan soal: ${explanation.slice(0, 220)}` : `Pecah soal menjadi satu langkah kecil terlebih dahulu dengan konsep ${conceptName || conceptId || "ini"}.`)
-        : `Tuliskan langkah penyelesaianmu satu per satu, lalu periksa kembali operasi pada basis dan pangkat.`;
-    return { reply: fallback, ai: false, fallback: true, hintIndex, code: error?.code || "AI_HINT_UNAVAILABLE" };
-  }
-}
-
 export async function correctAnswerWithAI({ question, selectedAnswer, correctAnswer, baselineDiagnosis, context = {} }) {
-  try { return await callEndpoint({ mode:"correct", question, selectedAnswer, correctAnswer, baselineDiagnosis, context }, { timeoutMs: 9000 }); }
+  try { return await callEndpoint({ mode:"correct", question, selectedAnswer, correctAnswer, baselineDiagnosis, context }); }
   catch (error) { console.error("AI correction failed", error); return { ...baselineDiagnosis, ai:false, unavailable:true, aiError:error?.message || "AI unavailable", code:error?.code || "AI_UNAVAILABLE" }; }
 }
 
 export async function recommendNextQuestion({ studentModel, questions, recentAttempts = [] }) {
-  try { return await callEndpoint({ mode:"recommend", studentModel, questions, recentAttempts }, { timeoutMs: 12000 }); }
-  catch (error) { console.error("AI recommendation failed", error); return { ai:false, unavailable:true, questionId:null, reason:"Latihan berikut dipilih berdasarkan perkembangan belajarmu." }; }
-}
-
-export async function generateNextQuestion({ studentModel, currentQuestion, concept, eligibleConcepts = [], recentAttempts = [], hintsUsed = 0, failedAttempts = 0, comicContext = {} }) {
+  const all = Array.isArray(questions) ? questions.filter(q => (q.assessmentType || "practice") === "practice" && q.status !== "Draft") : [];
+  const profiles = studentModel?.concepts || {};
+  const attempted = new Set(Object.entries(profiles).filter(([,p]) => Number(p?.attempts || 0) > 0).map(([id]) => id));
+  const attemptedQuestions = attempted.size ? all.filter(q => attempted.has(q.conceptId)) : all.slice(0, Math.max(1, all.findIndex(q => q.conceptId !== all[0]?.conceptId) >= 0 ? all.findIndex(q => q.conceptId !== all[0]?.conceptId) : all.length));
+  const allowed = attemptedQuestions.length ? attemptedQuestions : all.slice(0,1);
   try {
-    return await callEndpoint({
-      mode:"generate_next",
-      studentModel,
-      currentQuestion,
-      concept,
-      eligibleConcepts,
-      recentAttempts,
-      hintsUsed,
-      failedAttempts,
-      comicContext
-    }, { timeoutMs: 12000 });
+    const result = await callEndpoint({ mode:"recommend", studentModel, questions:allowed, recentAttempts });
+    const chosen = allowed.find(q => q.id === result?.questionId);
+    if (!chosen) {
+      const fallback = allowed.slice().sort((a,b) => Number(a.level ?? a.difficulty ?? 1) - Number(b.level ?? b.difficulty ?? 1))[0];
+      return { ...result, questionId:fallback?.id||null, conceptId:fallback?.conceptId||null, localGuard:true, reason:result?.reason||"Soal berikut tetap berada pada konsep yang sudah kamu coba." };
+    }
+    return result;
   } catch (error) {
-    console.error("AI next-question generation failed", error);
-    return { ai:false, unavailable:true, question:null, reason:"Soal berikut akan dipilih dari latihan yang tersedia." };
+    console.error("AI recommendation failed", error);
+    const fallback=allowed.slice().sort((a,b)=>Number(a.level??a.difficulty??1)-Number(b.level??b.difficulty??1))[0];
+    return { ai:false, fallback:true, questionId:fallback?.id||null, conceptId:fallback?.conceptId||null, targetLevel:Number(fallback?.level??1), reason:"Soal berikut tetap berada pada konsep yang sudah kamu coba." };
   }
 }
 
 export async function getTeacherRecommendation({ student, studentModel, attempts = [], events = [] }) {
   try { return await callEndpoint({ mode:"teacher_recommend", student, studentModel, attempts, events }); }
   catch (error) { console.error("AI teacher recommendation failed", error); return { ai:false, unavailable:true, summary:"Rekomendasi dibuat berdasarkan data pembelajaran yang tersedia.", priorityConcepts:[], recommendations:[], nextActivity:"Gunakan data pembelajaran siswa sebagai dasar tindak lanjut.", teacherNote:"" }; }
+}
+
+
+export async function getAIHint({ question, context = {}, hintLevel = 1 }) {
+  try {
+    return await callEndpoint({ mode: "hint", question, context, hintLevel });
+  } catch (error) {
+    const concept = context?.conceptName || context?.conceptId || question?.conceptId || "konsep ini";
+    const level = Math.max(1, Math.min(3, Number(hintLevel || 1)));
+    const hint = level === 1
+      ? `Fokus pada ${concept}: tentukan operasi atau sifat matematika apa yang digunakan sebelum menghitung hasilnya.`
+      : level === 2
+        ? "Tuliskan satu langkah antara informasi pada soal dan bentuk matematikanya. Periksa apa yang berubah pada operasi tersebut."
+        : "Periksa kembali basis, pangkat, tanda operasi, dan hasil antara sebelum menentukan jawaban akhir.";
+    return { hint, focus: "Petunjuk kontekstual", ai: false, fallback: true, code: error?.code || "AI_HINT_FALLBACK" };
+  }
+}
+
+export async function analyzeClassWithAI({ classData }) {
+  try {
+    return await callEndpoint({ mode: "class_analyze", classData }, { timeoutMs: 40000 });
+  } catch (error) {
+    return { ai: false, fallback: true, summary: "Analisis menggunakan data pembelajaran yang tersedia.", topMastery: [], priorityConcepts: [], misconceptions: [], studentNeeds: [], recommendations: ["Prioritaskan konsep dengan mastery terendah."] };
+  }
 }
