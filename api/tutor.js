@@ -1,6 +1,7 @@
 const DEFAULT_PROVIDER = (process.env.AI_PROVIDER || "gemini").toLowerCase();
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.7-flash";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.6-terra";
 const DEFAULT_TIMEOUT_MS = Math.max(8000, Number(process.env.AI_TIMEOUT_MS || 30000));
 const DEFAULT_RETRIES = Math.min(3, Math.max(1, Number(process.env.AI_MAX_RETRIES || 2)));
 
@@ -432,19 +433,120 @@ async function callGemini(prompt, options = {}) {
   throw lastError || new Error("Gemini request gagal.");
 }
 
-async function callAI(prompt, options = {}) {
-  if (DEFAULT_PROVIDER !== "gemini") throw Object.assign(new Error(`Provider ${DEFAULT_PROVIDER} belum diaktifkan pada build ini.`), { code: "AI_PROVIDER_UNSUPPORTED" });
-  try {
-    return await callGemini(prompt, options);
-  } catch (error) {
-    // Keep Tutor available when the primary model is temporarily unavailable or rate-limited.
-    const providerStatus = Number(error?.status);
-    const canFallback = providerStatus === 400 || providerStatus === 404 || providerStatus === 429 || [500,502,503,504].includes(providerStatus);
-    if (canFallback && DEFAULT_MODEL !== FALLBACK_MODEL) {
-      return await callGemini(prompt, { ...options, model:FALLBACK_MODEL, thinkingLevel:undefined });
-    }
-    throw error;
+async function callOpenAI(prompt, options = {}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    const e = new Error("OPENAI_API_KEY belum dikonfigurasi di server.");
+    e.code = "OPENAI_NOT_CONFIGURED";
+    throw e;
   }
+
+  const model = options.openaiModel || OPENAI_MODEL;
+  const inputContent = [{ type: "input_text", text: prompt }];
+  if (options.imageData) inputContent.push({ type: "input_image", image_url: options.imageData });
+  else if (options.imageUrl) inputContent.push({ type: "input_image", image_url: options.imageUrl });
+
+  const payload = {
+    model,
+    input: [{ role: "user", content: inputContent }],
+    max_output_tokens: options.maxOutputTokens || 1200
+  };
+  if (options.json) payload.text = { format: { type: "json_object" } };
+  if (options.thinkingLevel) payload.reasoning = { effort: options.thinkingLevel };
+
+  const requestTimeoutMs = Math.max(8000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
+  let lastError = null;
+  const maxRetries = Math.min(1, Math.max(0, Number(options.maxRetries ?? 1)));
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const started = Date.now();
+    try {
+      const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(payload)
+      }, requestTimeoutMs);
+      const data = await response.json().catch(() => ({}));
+      const latencyMs = Date.now() - started;
+      if (!response.ok) {
+        const e = new Error(data?.error?.message || `OpenAI request gagal (${response.status})`);
+        e.status = response.status; e.provider = "openai"; e.latencyMs = latencyMs;
+        lastError = e;
+        if (!isRetryable(response.status) || attempt >= maxRetries) throw e;
+        await new Promise(r => setTimeout(r, backoffMs(attempt, response.headers.get("retry-after"))));
+        continue;
+      }
+
+      let text = typeof data?.output_text === "string" ? data.output_text.trim() : "";
+      if (!text) {
+        const chunks = [];
+        for (const item of data?.output || []) {
+          for (const content of item?.content || []) {
+            if (typeof content?.text === "string") chunks.push(content.text);
+          }
+        }
+        text = chunks.join("\n").trim();
+      }
+      if (!text) {
+        const e = new Error("OpenAI tidak mengembalikan teks.");
+        e.code = "OPENAI_EMPTY_RESPONSE"; e.provider = "openai"; e.latencyMs = latencyMs;
+        lastError = e;
+        if (attempt >= maxRetries) throw e;
+        continue;
+      }
+      return {
+        text,
+        meta: {
+          provider: "openai",
+          model,
+          attempts: attempt + 1,
+          latencyMs,
+          responseId: data?.id || null
+        }
+      };
+    } catch (e) {
+      lastError = e;
+      if (e?.name === "AbortError") e.code = "AI_TIMEOUT";
+      if (!(e?.name === "AbortError" || isRetryable(e?.status)) || attempt >= maxRetries) throw e;
+      await new Promise(r => setTimeout(r, backoffMs(attempt)));
+    }
+  }
+  throw lastError || new Error("OpenAI request gagal.");
+}
+
+async function callAI(prompt, options = {}) {
+  // Multi-provider failover: whichever provider is primary, the other provider
+  // gets a chance before the request is reported as failed. This is especially
+  // important for AI-generated practice questions because there is deliberately
+  // no question-bank fallback in this application.
+  const primary = DEFAULT_PROVIDER === "openai" ? "openai" : "gemini";
+  const providers = [primary, primary === "gemini" ? "openai" : "gemini"];
+  let lastError = null;
+
+  for (const provider of providers) {
+    try {
+      if (provider === "openai") {
+        return await callOpenAI(prompt, options);
+      }
+      try {
+        return await callGemini(prompt, options);
+      } catch (error) {
+        const providerStatus = Number(error?.status);
+        const canFallbackModel = providerStatus === 400 || providerStatus === 404 || providerStatus === 429 || [500,502,503,504].includes(providerStatus);
+        if (canFallbackModel && DEFAULT_MODEL !== FALLBACK_MODEL) {
+          return await callGemini(prompt, { ...options, model: FALLBACK_MODEL, thinkingLevel: undefined });
+        }
+        throw error;
+      }
+    } catch (error) {
+      lastError = error;
+      console.error(`AI provider ${provider} failed`, { code:error?.code || null, status:error?.status || null, message:error?.message || "unknown" });
+    }
+  }
+  throw lastError || Object.assign(new Error("Semua AI provider gagal."), { code: "AI_ALL_PROVIDERS_FAILED" });
 }
 
 function normalizeCorrection(parsed, fallback = {}) {
@@ -495,10 +597,9 @@ export default async function handler(req, res) {
       // from the provider retry logic, which cannot detect bad generated content.
       try {
         const strictPrompt = `${prompt}\n\nPENTING: Respons sebelumnya tidak lolos validasi. Kali ini keluarkan HANYA soal matematika konkret, misalnya perhitungan/simplifikasi/penerapan konsep. Jangan keluarkan pertanyaan tentang langkah belajar.`;
-        response = await callGemini(strictPrompt, {
-          model: FALLBACK_MODEL,
+        response = await callAI(strictPrompt, {
           json: true,
-          thinkingLevel: /^gemini-3\./i.test(FALLBACK_MODEL) ? "medium" : undefined,
+          thinkingLevel: "medium",
           maxOutputTokens: 1100,
           timeoutMs: 18000,
           maxRetries: 0
@@ -581,44 +682,19 @@ export default async function handler(req, res) {
     if (!message) return json(res, 400, { error: "Message is required" });
     const history = Array.isArray(body.history) ? body.history : [];
     const tutorContext = body.context || {};
-    // Tutor uses the proven Gemini generateContent path. The browser sends
-    // the actual panel image as a data URL, so the server never needs to
-    // understand cloud-media:// references. This keeps Tutor independent
-    // from the newer Interactions API while still using Gemini vision.
-    // Tutor intentionally uses a separate, conservative model path. This
-    // keeps multimodal tutoring independent from the heavier correction /
-    // recommendation flows and avoids Gemini 3 thinking/output edge cases.
-    const tutorModel = process.env.GEMINI_TUTOR_MODEL || "gemini-3.8-flash";
-    let response;
-    try {
-      response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
-        model: tutorModel,
-        imageData: body.imageData || "",
-        imageMime: body.imageMime || "",
-        imageUrl: tutorContext.imageUrl,
-        // Image is preferred context, never a hard requirement.
-        imageExpected: false,
-        maxOutputTokens: 900,
-        thinkingLevel: "low"
-      });
-    } catch (primaryError) {
-      // One deterministic fallback to the configured primary model. No retry
-      // storm: the endpoint either returns a reply or a concrete diagnostic.
-      if (DEFAULT_MODEL !== tutorModel) {
-        response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
-          model: DEFAULT_MODEL,
-          imageData: body.imageData || "",
-          imageMime: body.imageMime || "",
-          imageUrl: tutorContext.imageUrl,
-          // Image is preferred context, never a hard requirement.
-        imageExpected: false,
-          maxOutputTokens: 800,
-          thinkingLevel: /^gemini-3\./i.test(DEFAULT_MODEL) ? "low" : undefined
-        });
-      } else {
-        throw primaryError;
-      }
-    }
+    // Tutor uses the same multi-provider failover as the adaptive generator.
+    // Gemini remains the default; OpenAI is the second provider when Gemini
+    // fails, times out, or is unavailable.
+    const tutorModel = process.env.GEMINI_TUTOR_MODEL || DEFAULT_MODEL;
+    const response = await callAI(buildTutorPrompt(message, tutorContext, history), {
+      model: tutorModel,
+      imageData: body.imageData || "",
+      imageMime: body.imageMime || "",
+      imageUrl: tutorContext.imageUrl,
+      imageExpected: false,
+      maxOutputTokens: 900,
+      thinkingLevel: "low"
+    });
     return json(res, 200, { reply: response.text, ai: true, meta: { ...response.meta, tutorModel } });
   } catch (error) {
     console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });
