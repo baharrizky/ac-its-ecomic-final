@@ -132,6 +132,25 @@ async function callEndpoint(payload, { timeoutMs = 35000 } = {}) {
   }
 }
 
+function localTutorFallback({ message, context = {}, history = [] }) {
+  const q = String(message || "").trim().toLowerCase();
+  const concept = context?.conceptName || "konsep yang sedang dipelajari";
+  const narration = String(context?.narration || "").trim();
+  const equation = String(context?.equation || "").trim();
+  const previous = Array.isArray(history) && history.length ? String(history[history.length - 1]?.text || "") : "";
+
+  if (/basis|base|pangkat|eksponen/.test(q)) {
+    if (/basis/.test(q)) return { reply: `Basis adalah bilangan pokok yang menjadi dasar perpangkatan. Pada bentuk $a^c=s$, basisnya adalah $a$. Pada bentuk logaritma $^a\\log s$ atau $\\log_a s$, basisnya juga $a$.`, ai:false, fallback:true };
+    if (/pangkat/.test(q)) return { reply: `Pangkat menunjukkan berapa kali basis digunakan sebagai faktor. Misalnya $a^3=a\\times a\\times a$. Jadi pada ${equation || "$a^n$"}, perhatikan mana basis dan mana pangkatnya.`, ai:false, fallback:true };
+    return { reply: `Untuk ${concept}, coba perhatikan basis, pangkat, dan operasi yang muncul pada soal. ${equation ? `Pada panel terlihat ${equation}.` : narration ? `Panel ini menjelaskan: ${narration.slice(0,180)}.` : ""}`, ai:false, fallback:true };
+  }
+  if (/panel|gambar|komik/.test(q) && (narration || equation)) {
+    return { reply: `Pada panel ini, ${narration ? narration.slice(0,280) : `terdapat persamaan ${equation}`}. Hubungkan bagian tersebut dengan konsep ${concept}. Bagian mana yang menurutmu ingin kita uraikan lebih dulu?`, ai:false, fallback:true };
+  }
+  if (previous) return { reply: `Kita lanjut dari pembahasan sebelumnya. Fokusnya tetap pada ${concept}. Dari informasi yang sudah ada, tentukan dulu operasi atau hubungan matematikanya, lalu kita cek langkahmu bersama.`, ai:false, fallback:true };
+  return { reply: `Kita sedang membahas ${concept}. Jelaskan bagian mana yang ingin kamu pahami, dan aku akan bantu menguraikannya langkah demi langkah berdasarkan konteks materi ini.`, ai:false, fallback:true };
+}
+
 export async function getTutorReply({ message, context, history }) {
   try {
     const payload = await prepareTutorPayload({ message, context, history });
@@ -143,12 +162,10 @@ export async function getTutorReply({ message, context, history }) {
       providerStatus: error?.providerStatus,
       message: error?.message
     });
-    const concept = context?.conceptName || "konsep yang sedang dipelajari";
-    const comic = context?.comicTitle || "komik ini";
+    const fallback = localTutorFallback({ message, context, history });
     return {
-      reply: `Tutor sedang tidak tersedia sementara. Kamu tetap bisa melanjutkan belajar dari ${comic}. Coba kirim pertanyaan sekali lagi.`,
-      ai: false,
-      unavailable: true,
+      ...fallback,
+      unavailable: false,
       aiError: error?.message || "AI unavailable",
       code: error?.code || "AI_UNAVAILABLE",
       status: error?.status || null
@@ -179,6 +196,41 @@ export async function recommendNextQuestion({ studentModel, questions, recentAtt
     console.error("AI recommendation failed", error);
     const fallback=allowed.slice().sort((a,b)=>Number(a.level??a.difficulty??1)-Number(b.level??b.difficulty??1))[0];
     return { ai:false, fallback:true, questionId:fallback?.id||null, conceptId:fallback?.conceptId||null, targetLevel:Number(fallback?.level??1), reason:"Soal berikut tetap berada pada konsep yang sudah kamu coba." };
+  }
+}
+
+function localGeneratedQuestion({ currentQuestion, context = {}, targetLevel = 1 }) {
+  const conceptId = context?.conceptId || currentQuestion?.conceptId || "";
+  const name = String(context?.conceptName || conceptId || "Konsep");
+  const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const base = String(currentQuestion?.question || "").trim();
+  const lower = `${name} ${base}`.toLowerCase();
+  if (/perkalian|sifat.*kali|perkalian eksponen/.test(lower)) {
+    return {id,question:"Sederhanakan $2^3 \times 2^2$.",equation:"2^3 \times 2^2",options:["$2^5$","$2^6$","$4^5$","$2^1$"],answer:0,conceptId,level:Math.max(1,Number(targetLevel||1)),assessmentType:"practice",status:"Published",source:"ai-fallback",explanation:"Untuk basis yang sama, pangkat dijumlahkan: $a^m\times a^n=a^{m+n}$."};
+  }
+  if (/pembagian|sifat.*bagi/.test(lower)) {
+    return {id,question:"Sederhanakan $3^5 \div 3^2$.",equation:"3^5 \div 3^2",options:["$3^2$","$3^3$","$3^7$","$9^3$"],answer:1,conceptId,level:Math.max(1,Number(targetLevel||1)),assessmentType:"practice",status:"Published",source:"ai-fallback",explanation:"Untuk basis yang sama pada pembagian, pangkat dikurangkan: $a^m\div a^n=a^{m-n}$."};
+  }
+  if (/pangkat dari pangkat|pangkat.*pangkat/.test(lower)) {
+    return {id,question:"Sederhanakan $(2^3)^2$.",equation:"(2^3)^2",options:["$2^5$","$2^6$","$2^9$","$4^6$"],answer:1,conceptId,level:Math.max(1,Number(targetLevel||1)),assessmentType:"practice",status:"Published",source:"ai-fallback",explanation:"Pada pangkat dari pangkat, pangkat dikalikan: $(a^m)^n=a^{mn}$."};
+  }
+  return {id,question:`Latihan lanjutan: pada konsep ${name}, langkah manakah yang paling tepat dilakukan terlebih dahulu?`,equation:"",options:["Menentukan operasi yang digunakan","Langsung memilih hasil akhir","Mengabaikan informasi soal","Mengganti konsep dengan materi lain"],answer:0,conceptId,level:Math.max(1,Number(targetLevel||1)),assessmentType:"practice",status:"Published",source:"ai-fallback",explanation:`Identifikasi operasi dan informasi yang diberikan terlebih dahulu pada ${name}.`};
+}
+
+export async function generateNextPracticeQuestion({ currentQuestion, context = {}, studentModel = {}, hintsUsed = 0, targetLevel = 1 }) {
+  try {
+    const result = await callEndpoint({
+      mode: "generate_question",
+      currentQuestion,
+      context,
+      studentModel,
+      hintsUsed,
+      targetLevel
+    }, { timeoutMs: 40000 });
+    return result?.question ? { ...result.question, ai: true, meta: result.meta } : localGeneratedQuestion({ currentQuestion, context, targetLevel });
+  } catch (error) {
+    console.error("AI question generation failed", error);
+    return localGeneratedQuestion({ currentQuestion, context, targetLevel });
   }
 }
 

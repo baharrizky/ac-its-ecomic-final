@@ -1,6 +1,6 @@
 const DEFAULT_PROVIDER = (process.env.AI_PROVIDER || "gemini").toLowerCase();
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-flash-latest";
 const DEFAULT_TIMEOUT_MS = Math.max(8000, Number(process.env.AI_TIMEOUT_MS || 30000));
 const DEFAULT_RETRIES = Math.min(3, Math.max(1, Number(process.env.AI_MAX_RETRIES || 2)));
 
@@ -56,26 +56,27 @@ function buildTutorPrompt(message, context, history = []) {
   const compact = buildContext(context);
   const recent = (history || [])
     .filter(item => item && (item.role === "user" || item.role === "assistant"))
-    .slice(-4)
-    .map(item => ({ role: item.role, text: clampText(item.text, 700) }));
+    .slice(-10)
+    .map(item => ({ role: item.role, text: clampText(item.text, 900) }));
 
-  // Keep the multimodal tutor prompt deliberately small. The panel image is
-  // the primary visual source; metadata is supporting context only.
   return [
-    "Kamu adalah AI Tutor matematika untuk siswa Indonesia.",
-    "Jawab sebagai tutor yang hangat, singkat, jelas, dan interaktif.",
-    "Jika ada gambar panel, AMATI GAMBAR TERLEBIH DAHULU. Gunakan gambar sebagai konteks utama untuk hal-hal visual.",
-    "Jika gambar tidak tersedia, tetap jawab pertanyaan siswa menggunakan konteks materi yang tersedia. Jangan membalas hanya dengan pesan bahwa gambar gagal dibaca.",
-    "Jangan menganggap metadata konsep sebagai sesuatu yang pasti terlihat pada gambar.",
-    "Jika panel hanya pengantar/cerita, katakan bahwa panel itu berfungsi sebagai konteks dan jangan memaksakan materi matematika ke dalamnya.",
-    "Jika siswa meminta jawaban soal secara langsung, beri satu petunjuk dan satu pertanyaan penuntun sebelum jawaban akhir.",
-    "Jika siswa tampak belum menguasai prasyarat, arahkan siswa membaca bagian materi atau panel yang relevan yang memang tercantum dalam konteks. Sebutkan judul bagian secara spesifik bila tersedia; jangan mengarang nomor halaman atau bagian yang tidak ada.",
-    "Jika pertanyaan dapat dijawab dari konsep yang sedang dipelajari, tetap hubungkan jawaban dengan konsep tersebut dan, bila perlu, arahkan kembali ke bagian materi yang relevan sebelum memberi latihan berikutnya.",
-    "Jangan gunakan LaTeX mentah. Gunakan x², a/b, 2 ÷ 3, dan notasi yang mudah dibaca.",
-    "Jangan mengarang detail.",
-    `KONTEKS: ${JSON.stringify(compact)}`,
-    `RIWAYAT: ${JSON.stringify(recent)}`,
-    `PERTANYAAN: ${clampText(message, 2000)}`
+    "Kamu adalah Tutor AI matematika untuk AC-ITS E-Comic.",
+    "Tujuanmu adalah membantu siswa benar-benar memahami konsep melalui percakapan yang nyambung dengan materi dan panel yang sedang dipelajari.",
+    "Jangan mengulang jawaban pembuka atau instruksi yang sama jika siswa sudah melanjutkan percakapan.",
+    "Gunakan RIWAYAT percakapan sebagai konteks utama untuk pertanyaan lanjutan.",
+    "Jika siswa bertanya tentang panel, gunakan isi panel (narasi, dialog, persamaan) dan gambar panel jika tersedia.",
+    "Jika siswa bertanya konsep, jawab konsep tersebut secara langsung dengan contoh singkat yang relevan dengan konteks pembelajaran.",
+    "Jika siswa meminta jawaban soal latihan, jangan langsung membocorkan jawaban akhir. Berikan satu petunjuk dan satu pertanyaan penuntun terlebih dahulu.",
+    "Jika siswa sudah mencoba atau mengajukan pertanyaan lanjutan, lanjutkan dari percakapan sebelumnya; jangan kembali menyuruh membaca materi dari awal.",
+    "Jika memang perlu mengarahkan ke materi, sebutkan bagian yang spesifik dan jelaskan apa yang perlu dicari, bukan sekadar mengatakan 'baca ulang'.",
+    "Jika siswa bertanya hal sederhana seperti arti simbol, basis, pangkat, operasi, atau langkah tertentu, jawab langsung dan ringkas.",
+    "Hubungkan jawaban dengan konsep yang sedang dipelajari tanpa memaksakan konsep yang tidak relevan.",
+    "Jangan mengarang isi panel, judul submateri, atau informasi yang tidak tersedia dalam konteks.",
+    "Gunakan Bahasa Indonesia yang natural, suportif, dan tidak kaku. Maksimal sekitar 2-5 paragraf pendek.",
+    "Notasi matematika boleh menggunakan LaTeX inline $...$ agar renderer aplikasi dapat menampilkannya.",
+    `KONTEKS PEMBELAJARAN: ${JSON.stringify(compact)}`,
+    `RIWAYAT PERCAKAPAN: ${JSON.stringify(recent)}`,
+    `PERTANYAAN SISWA: ${clampText(message, 2500)}`
   ].join("\n\n");
 }
 
@@ -112,6 +113,31 @@ function buildRecommendationPrompt(payload) {
     `STUDENT MODEL:\n${JSON.stringify(model, null, 2)}`,
     `RECENT ATTEMPTS:\n${JSON.stringify(attempts, null, 2)}`,
     `QUESTION BANK:\n${JSON.stringify(questions, null, 2)}`
+  ].join("\n\n");
+}
+
+function buildGenerateQuestionPrompt(payload) {
+  const current = payload?.currentQuestion || {};
+  const context = buildContext(payload?.context || {});
+  const model = payload?.studentModel || {};
+  const hintsUsed = Number(payload?.hintsUsed || 0);
+  const targetLevel = Math.max(1, Math.min(5, Number(payload?.targetLevel || current.level || current.difficulty || 1)));
+  return [
+    "Kamu adalah AI Question Generator untuk AC-ITS E-Comic.",
+    "Buat SATU soal pilihan ganda matematika baru untuk soal latihan berikutnya.",
+    "Soal harus menguji konsep yang sama atau konsep prasyarat yang sudah dipelajari siswa, bukan materi baru.",
+    "Soal harus berbeda dari soal sebelumnya tetapi tingkat kesulitannya bertahap.",
+    `Target level: ${targetLevel}. Jumlah hint pada soal sebelumnya: ${hintsUsed}.`,
+    "Jika siswa menjawab benar tanpa banyak hint, boleh menaikkan kompleksitas satu tingkat. Jika siswa menggunakan banyak hint, pertahankan atau turunkan kompleksitas.",
+    "Buat tepat 4 pilihan jawaban dan hanya satu jawaban benar.",
+    "Jangan membuat pilihan yang ambigu atau memiliki dua jawaban benar.",
+    "Sertakan pembahasan singkat yang menjelaskan konsep, tetapi pembahasan tidak ditampilkan sebelum siswa menjawab.",
+    "Sertakan misconceptionFocus berupa miskonsepsi yang kemungkinan dapat dideteksi jika siswa memilih pengecoh tertentu.",
+    "Gunakan Bahasa Indonesia dan notasi matematika yang mudah dirender.",
+    "Balas HANYA JSON valid dengan struktur: {\"question\":string,\"equation\":string,\"options\":string[],\"answer\":number,\"conceptId\":string,\"level\":number,\"explanation\":string,\"misconceptionFocus\":string[]}",
+    `KONSEP: ${JSON.stringify(context)}`,
+    `STUDENT MODEL: ${JSON.stringify(model)}`,
+    `SOAL SEBELUMNYA: ${JSON.stringify(current)}`
   ].join("\n\n");
 }
 
@@ -379,6 +405,34 @@ export default async function handler(req, res) {
       const parsed = parseJsonObject(response.text);
       if (!parsed) throw Object.assign(new Error("AI correction mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
       return json(res, 200, { ...normalizeCorrection(parsed, body.baselineDiagnosis || {}), ai: true });
+    }
+
+    if (mode === "generate_question") {
+      const response = await callAI(buildGenerateQuestionPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 1000 });
+      const parsed = parseJsonObject(response.text);
+      if (!parsed) throw Object.assign(new Error("AI question generator mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
+      const options = Array.isArray(parsed.options) ? parsed.options.map(x => String(x)).filter(Boolean).slice(0, 4) : [];
+      if (!parsed.question || options.length !== 4 || !Number.isInteger(Number(parsed.answer)) || Number(parsed.answer) < 0 || Number(parsed.answer) > 3) {
+        throw Object.assign(new Error("AI question generator menghasilkan format soal yang tidak lengkap."), { code: "AI_INVALID_QUESTION" });
+      }
+      return json(res, 200, {
+        question: {
+          id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          question: String(parsed.question),
+          equation: String(parsed.equation || ""),
+          options,
+          answer: Number(parsed.answer),
+          conceptId: String(parsed.conceptId || body?.context?.conceptId || ""),
+          level: Number(parsed.level || body?.targetLevel || 1),
+          assessmentType: "practice",
+          status: "Published",
+          source: "ai-generated",
+          explanation: String(parsed.explanation || ""),
+          misconceptionFocus: Array.isArray(parsed.misconceptionFocus) ? parsed.misconceptionFocus.slice(0, 4).map(String) : []
+        },
+        ai: true,
+        meta: response.meta
+      });
     }
 
     if (mode === "recommend") {

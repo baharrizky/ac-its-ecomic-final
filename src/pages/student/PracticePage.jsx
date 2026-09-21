@@ -12,22 +12,36 @@ export default function PracticePage({questions=[],studentModel={},concepts=[],o
  const recommendation=useMemo(()=>chooseNextActivity(studentModel,published),[studentModel,published]);
  const initial=recommendation.questionId?published.find(q=>q.id===recommendation.questionId):published[0];
  const startIndex=Math.max(0,published.findIndex(q=>q.id===initial?.id));
+ const [generatedQuestions,setGeneratedQuestions]=useState([]);
+ const allQuestions=useMemo(()=>[...published,...generatedQuestions],[published,generatedQuestions]);
  const [index,setIndex]=useState(startIndex); const [selected,setSelected]=useState(null); const [diagnosis,setDiagnosis]=useState(null); const [hintLevel,setHintLevel]=useState(0); const [hintsUsed,setHintsUsed]=useState(0); const [aiHint,setAiHint]=useState(""); const [aiReply,setAiReply]=useState(""); const [loadingHint,setLoadingHint]=useState(false); const [loadingAI,setLoadingAI]=useState(false);
- const q=published[index]; const conceptName=concepts.find(c=>c.id===q?.conceptId)?.name||q?.conceptId||"Konsep";
+ const q=allQuestions[index]; const conceptName=concepts.find(c=>c.id===q?.conceptId)?.name||q?.conceptId||"Konsep";
  if(!published.length)return <div><div className="page-kicker">Adaptive Practice</div><h1 className="page-title">Latihan Berjenjang</h1><div className="card empty-state"><strong>Belum ada soal Published.</strong><span>Guru perlu menerbitkan soal latihan pada Bank Soal.</span></div></div>;
  async function choose(i){if(diagnosis)return;setSelected(i);const d=await onAnswer?.(q,i,"practice",0,{hintsUsed});setDiagnosis(d||null);setAiHint("");setAiReply("");}
  async function useHint(){if(!diagnosis||diagnosis.correct||hintLevel>=3||loadingHint)return;const next=Math.min(3,hintLevel+1);setHintLevel(next);setHintsUsed(v=>v+1);setLoadingHint(true);try{const result=await onHint?.({question:q,hintIndex:next,conceptId:q.conceptId});setAiHint(result?.hint||"Fokus pada operasi yang digunakan pada soal dan tuliskan satu langkah antara.");}finally{setLoadingHint(false)}}
  function retry(){setSelected(null);setDiagnosis(null);setAiHint("");setAiReply("");}
  async function askAI(){if(!diagnosis?.correct||!onAIExplain)return;setLoadingAI(true);try{const r=await onAIExplain({message:`Jelaskan mengapa jawaban siswa benar dan hubungkan langkahnya dengan konsep ${conceptName}. Jangan membuat soal baru.`,context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName}});setAiReply(r?.reply||"Belum ada penjelasan AI.");}finally{setLoadingAI(false)}}
- function next(){const rec=diagnosis?.recommendation;if(rec?.questionId&&rec.questionId!==q.id){const ni=published.findIndex(item=>item.id===rec.questionId);if(ni>=0){resetAndSet(ni);return;}}if(index>=published.length-1){resetAndSet(0);return;}resetAndSet(index+1)}
+ function next(){
+   const generated=diagnosis?.generatedQuestion;
+   if(generated?.id){
+     const existing=allQuestions.findIndex(item=>item.id===generated.id);
+     if(existing>=0){resetAndSet(existing);return;}
+     setGeneratedQuestions(prev=>[...prev,generated]);
+     setSelected(null);setDiagnosis(null);setAiHint("");setAiReply("");setHintLevel(0);setHintsUsed(0);setIndex(published.length+generatedQuestions.length);return;
+   }
+   const rec=diagnosis?.recommendation;
+   if(rec?.questionId&&rec.questionId!==q.id){const ni=allQuestions.findIndex(item=>item.id===rec.questionId);if(ni>=0){resetAndSet(ni);return;}}
+   if(index>=allQuestions.length-1){resetAndSet(0);return;}
+   resetAndSet(index+1);
+ }
  function resetAndSet(ni){setSelected(null);setDiagnosis(null);setAiHint("");setAiReply("");setHintLevel(0);setHintsUsed(0);setIndex(ni)}
- const progress=Math.round(((index+1)/published.length)*100);
+ const progress=Math.round(((index+1)/Math.max(1,allQuestions.length))*100);
  const nextReason=diagnosis?.recommendation?.reason;
  return (
   <div>
    <div className="page-kicker">Adaptive Practice</div>
    <h1 className="page-title">Latihan Berjenjang</h1>
-   <p className="page-desc">Soal berikut dipilih dari konsep yang sudah kamu coba. Tingkat latihan naik bertahap sesuai mastery dan penggunaan hint.</p>
+   <p className="page-desc">Soal berikut dipilih dari konsep yang sudah kamu coba. Setelah jawaban benar, AI membuat soal dan pilihan jawaban baru secara bertahap sesuai mastery dan penggunaan hint.</p>
    <div className="split" style={{marginTop:18}}>
     <section className="card">
      <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
@@ -35,7 +49,7 @@ export default function PracticePage({questions=[],studentModel={},concepts=[],o
       <Badge tone={Number(q.level||q.difficulty||1)<=1?"green":"amber"}>Level {q.level||q.difficulty||1}</Badge>
      </div>
      <div className="progress" style={{marginTop:14}}><span style={{width:`${progress}%`}}/></div>
-     <div className="subtle" style={{marginTop:6}}>Soal {index+1} · {progress}% sesi</div>
+     <div className="subtle" style={{marginTop:6}}>Soal {index+1} · {progress}% sesi {q.source==="ai-generated"?"· Dibuat AI":""}</div>
      <div className="question" style={{marginTop:18}}>{q.question}</div>
      {q.equation&&<div className="equation-preview" dangerouslySetInnerHTML={{__html:renderEquation(q.equation)}}/>}
      <div style={{marginTop:12}}>
@@ -57,7 +71,7 @@ export default function PracticePage({questions=[],studentModel={},concepts=[],o
        )}
        {diagnosis.correct&&(
         <div style={{marginTop:10}}>
-         <div className="ai-feedback"><strong>Rekomendasi soal berikutnya</strong><p>{nextReason||"AI memilih soal berikutnya berdasarkan mastery, miskonsepsi, dan riwayat hint."}</p></div>
+         <div className="ai-feedback"><strong>AI menyiapkan soal berikutnya</strong><p>{diagnosis.generatedQuestion?"Soal dan pilihan jawaban baru sudah dibuat berdasarkan konsep, mastery, dan penggunaan hint.":(nextReason||"AI memilih soal berikutnya berdasarkan mastery, miskonsepsi, dan riwayat hint.")}</p></div>
          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
           <button className="btn-primary" onClick={next}>Soal Berikutnya →</button>
           <button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"AI sedang menjelaskan…":"Tanya Tutor"}</button>

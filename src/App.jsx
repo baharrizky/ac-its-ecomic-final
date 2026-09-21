@@ -6,7 +6,7 @@ import { loadCloudComics,saveCloudComic,subscribeCloudComics,mergeComicCollectio
 import { saveCloudQuestion,deleteCloudQuestion,subscribeCloudQuestions } from "./services/cloudQuestionService";
 import { getSession,logout,getRegisteredStudents,updateUserProfile } from "./services/authService";
 import { listConcepts } from "./services/conceptService";
-import { getTutorReply, correctAnswerWithAI, recommendNextQuestion, getTeacherRecommendation, getAIHint } from "./services/tutorService";
+import { getTutorReply, correctAnswerWithAI, recommendNextQuestion, generateNextPracticeQuestion, getTeacherRecommendation, getAIHint } from "./services/tutorService";
 import { diagnoseAnswer } from "./engine/diagnosisEngine";
 import { updateMastery } from "./engine/masteryEngine";
 import { createEmptyStudentModel,getStudentModel,saveStudentModel,subscribeStudentModel,recordAttempt,recordLearningEvent,saveReflection,listReflections,saveAttendance,listAttendance,listAttempts,saveExamResult,listExamResults,listLearningEvents } from "./services/learningDataService";
@@ -205,11 +205,23 @@ export default function App(){
    setState(s=>({...s,studentModel:next}));
    if(session?.uid){await Promise.all([saveStudentModel(session.uid,next),recordAttempt({uid:session.uid,name:session.name,questionId:q.id,conceptId:q.conceptId,selectedIndex:aIndex,correct:d.correct,score:d.correct?100:0,mode:modeName,hintsUsed:Number(meta?.hintsUsed||0),educationLevel:session.educationLevel,grade:session.grade,school:session.school,teacherUid:session.classTeacherUid||null,classId:session.classId||null,misconceptionTag:d.misconceptionTag,aiCorrection:d}),recordLearningEvent({uid:session.uid,teacherUid:session.classTeacherUid||null,classId:session.classId||null,type:modeName==="reader-quiz"?"quiz_attempt":"question_attempt",mode:modeName,durationSeconds:Number(durationSeconds)||0,payload:{questionId:q.id,conceptId:q.conceptId,correct:d.correct,mode:modeName,hintsUsed:Number(meta?.hintsUsed||0),aiCorrection:d}})]);}
    let recommendation=null;
+   let generatedQuestion=null;
    if(modeName!=="exam"){
-     recommendation=await recommendNextQuestion({studentModel:next,questions:visibleStudentQuestions,recentAttempts:[{questionId:q.id,conceptId:q.conceptId,correct:d.correct,hintsUsed:Number(meta?.hintsUsed||0)}]});
+     const recentAttempt={questionId:q.id,conceptId:q.conceptId,correct:d.correct,hintsUsed:Number(meta?.hintsUsed||0)};
+     const recommendationPromise=recommendNextQuestion({studentModel:next,questions:visibleStudentQuestions,recentAttempts:[recentAttempt]});
+     const generationPromise=d.correct
+       ? generateNextPracticeQuestion({
+           currentQuestion:q,
+           studentModel:next,
+           hintsUsed:Number(meta?.hintsUsed||0),
+           targetLevel:Math.max(1,Math.min(5,Number(q.level||q.difficulty||1)+(Number(meta?.hintsUsed||0)===0?1:0))),
+           context:{conceptId:q.conceptId,conceptName:availableConcepts.find(c=>c.id===q.conceptId)?.name||q.conceptId,educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school}
+         })
+       : Promise.resolve(null);
+     [recommendation,generatedQuestion]=await Promise.all([recommendationPromise,generationPromise]);
      if(!recommendation?.questionId){recommendation={...recommendation,questionId:null,localFallback:true};}
    }
-   return {...d,recommendation};
+   return {...d,recommendation,generatedQuestion};
  };
  const handleTutor=async(message,context={})=>{
    const history=tutorMessages.slice(-12);
