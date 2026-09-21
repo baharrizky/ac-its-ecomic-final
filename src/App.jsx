@@ -215,6 +215,8 @@ export default function App(){
            studentModel:next,
            hintsUsed:Number(meta?.hintsUsed||0),
            targetLevel:Math.max(1,Math.min(5,Number(q.level||q.difficulty||1)+(Number(meta?.hintsUsed||0)===0?1:0))),
+           questionBank:visibleStudentQuestions,
+           previousOutcome:{correct:d.correct,selectedAnswer:q.options?.[aIndex],correctAnswer:q.options?.[q.answer],misconceptionTag:d.misconceptionTag},
            context:{conceptId:q.conceptId,conceptName:availableConcepts.find(c=>c.id===q.conceptId)?.name||q.conceptId,educationLevel:session?.educationLevel,grade:session?.grade,school:session?.school}
          })
        : Promise.resolve(null);

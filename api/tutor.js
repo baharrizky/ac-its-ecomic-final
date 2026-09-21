@@ -1,6 +1,6 @@
 const DEFAULT_PROVIDER = (process.env.AI_PROVIDER || "gemini").toLowerCase();
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-flash-latest";
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.6-flash";
 const DEFAULT_TIMEOUT_MS = Math.max(8000, Number(process.env.AI_TIMEOUT_MS || 30000));
 const DEFAULT_RETRIES = Math.min(3, Math.max(1, Number(process.env.AI_MAX_RETRIES || 2)));
 
@@ -122,23 +122,68 @@ function buildGenerateQuestionPrompt(payload) {
   const model = payload?.studentModel || {};
   const hintsUsed = Number(payload?.hintsUsed || 0);
   const targetLevel = Math.max(1, Math.min(5, Number(payload?.targetLevel || current.level || current.difficulty || 1)));
+  const previousOutcome = payload?.previousOutcome || {};
+  const bank = Array.isArray(payload?.questionBank) ? payload.questionBank.slice(0, 16) : [];
   return [
     "Kamu adalah AI Question Generator untuk AC-ITS E-Comic.",
-    "Buat SATU soal pilihan ganda matematika baru untuk soal latihan berikutnya.",
-    "Soal harus menguji konsep yang sama atau konsep prasyarat yang sudah dipelajari siswa, bukan materi baru.",
-    "Soal harus berbeda dari soal sebelumnya tetapi tingkat kesulitannya bertahap.",
-    `Target level: ${targetLevel}. Jumlah hint pada soal sebelumnya: ${hintsUsed}.`,
-    "Jika siswa menjawab benar tanpa banyak hint, boleh menaikkan kompleksitas satu tingkat. Jika siswa menggunakan banyak hint, pertahankan atau turunkan kompleksitas.",
-    "Buat tepat 4 pilihan jawaban dan hanya satu jawaban benar.",
-    "Jangan membuat pilihan yang ambigu atau memiliki dua jawaban benar.",
-    "Sertakan pembahasan singkat yang menjelaskan konsep, tetapi pembahasan tidak ditampilkan sebelum siswa menjawab.",
-    "Sertakan misconceptionFocus berupa miskonsepsi yang kemungkinan dapat dideteksi jika siswa memilih pengecoh tertentu.",
-    "Gunakan Bahasa Indonesia dan notasi matematika yang mudah dirender.",
+    "Buat SATU soal pilihan ganda matematika BARU untuk latihan berikutnya.",
+    "Soal WAJIB merupakan soal matematika nyata yang dapat dihitung/dijawab siswa, bukan pertanyaan tentang strategi belajar.",
+    "JANGAN membuat soal seperti 'langkah manakah yang tepat', 'apa yang dilakukan terlebih dahulu', 'menentukan operasi yang digunakan', atau pertanyaan meta tentang cara belajar.",
+    "Gunakan konsep yang sama atau konsep prasyarat yang SUDAH dipelajari siswa. Jangan memperkenalkan materi baru.",
+    `Target level: ${targetLevel}. Hint pada soal sebelumnya: ${hintsUsed}.`,
+    "Jika siswa benar tanpa hint, naikkan kompleksitas secara bertahap. Jika siswa menggunakan hint, pertahankan atau turunkan kompleksitas.",
+    "Soal harus berbeda dari soal sebelumnya dan tidak boleh menyalin soal dari bank.",
+    "Jika konsep berupa sifat eksponen, buat variasi hitungan eksponen yang benar-benar menguji sifat tersebut. Jika konsep lain, buat soal yang benar-benar menguji konsep tersebut.",
+    "Buat tepat 4 pilihan jawaban dan hanya satu yang benar.",
+    "Sertakan pembahasan singkat dan misconceptionFocus untuk pengecoh yang mungkin dipilih siswa.",
+    "Gunakan Bahasa Indonesia dan notasi matematika sederhana/LaTeX inline.",
     "Balas HANYA JSON valid dengan struktur: {\"question\":string,\"equation\":string,\"options\":string[],\"answer\":number,\"conceptId\":string,\"level\":number,\"explanation\":string,\"misconceptionFocus\":string[]}",
-    `KONSEP: ${JSON.stringify(context)}`,
+    `KONSEP DAN MATERI: ${JSON.stringify(context)}`,
     `STUDENT MODEL: ${JSON.stringify(model)}`,
-    `SOAL SEBELUMNYA: ${JSON.stringify(current)}`
+    `HASIL SOAL SEBELUMNYA: ${JSON.stringify(previousOutcome)}`,
+    `SOAL SEBELUMNYA: ${JSON.stringify(current)}`,
+    `BANK SOAL SEJENIS UNTUK DIHINDARI DUPLIKASINYA: ${JSON.stringify(bank)}`
   ].join("\n\n");
+}
+
+function validateGeneratedQuestion(parsed, body) {
+  const options = Array.isArray(parsed?.options) ? parsed.options.map(x => String(x)).filter(Boolean).slice(0, 4) : [];
+  const question = String(parsed?.question || "").trim();
+  const lower = question.toLowerCase();
+  const bannedMeta = [
+    "langkah manakah yang paling tepat",
+    "langkah manakah yang tepat",
+    "apa yang dilakukan terlebih dahulu",
+    "menentukan operasi yang digunakan",
+    "langsung memilih hasil akhir",
+    "mengabaikan informasi soal",
+    "mengganti konsep dengan materi lain"
+  ];
+  if (!question || options.length !== 4 || !Number.isInteger(Number(parsed?.answer)) || Number(parsed.answer) < 0 || Number(parsed.answer) > 3) {
+    throw Object.assign(new Error("AI question generator menghasilkan format soal yang tidak lengkap."), { code: "AI_INVALID_QUESTION" });
+  }
+  if (bannedMeta.some(term => lower.includes(term))) {
+    throw Object.assign(new Error("AI question generator menghasilkan soal meta, bukan soal matematika."), { code: "AI_META_QUESTION" });
+  }
+  const expectedConcept = String(body?.context?.conceptId || body?.currentQuestion?.conceptId || "");
+  const conceptId = String(parsed?.conceptId || expectedConcept);
+  const level = Math.max(1, Math.min(5, Number(parsed?.level || body?.targetLevel || 1)));
+  return {
+    question: {
+      id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      question,
+      equation: String(parsed.equation || ""),
+      options,
+      answer: Number(parsed.answer),
+      conceptId,
+      level,
+      assessmentType: "practice",
+      status: "Published",
+      source: "ai-generated",
+      explanation: String(parsed.explanation || ""),
+      misconceptionFocus: Array.isArray(parsed.misconceptionFocus) ? parsed.misconceptionFocus.slice(0, 4).map(String) : []
+    }
+  };
 }
 
 function buildTeacherPrompt(payload) {
@@ -325,21 +370,23 @@ async function callGemini(prompt, options = {}) {
   if (options.systemInstruction) payload.systemInstruction = { parts: [{ text: options.systemInstruction }] };
 
   let lastError = null;
-  for (let attempt = 0; attempt <= DEFAULT_RETRIES; attempt += 1) {
+  const maxRetries = Math.min(2, Math.max(0, Number(options.maxRetries ?? DEFAULT_RETRIES)));
+  const requestTimeoutMs = Math.max(8000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const started = Date.now();
     try {
       const response = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify(payload)
-      }, DEFAULT_TIMEOUT_MS);
+      }, requestTimeoutMs);
       const data = await response.json().catch(() => ({}));
       const latencyMs = Date.now() - started;
       if (!response.ok) {
         const e = new Error(data?.error?.message || `Gemini request gagal (${response.status})`);
         e.status = response.status; e.provider = "gemini"; e.latencyMs = latencyMs;
         lastError = e;
-        if (!isRetryable(response.status) || attempt >= DEFAULT_RETRIES) throw e;
+        if (!isRetryable(response.status) || attempt >= maxRetries) throw e;
         await new Promise(r => setTimeout(r, backoffMs(attempt, response.headers.get("retry-after"))));
         continue;
       }
@@ -350,7 +397,7 @@ async function callGemini(prompt, options = {}) {
         const e = new Error(`Gemini tidak mengembalikan teks (finishReason: ${finishReason}${blockReason ? `, ${blockReason}` : ""}).`);
         e.code = "AI_EMPTY_RESPONSE"; e.provider = "gemini"; e.latencyMs = latencyMs;
         lastError = e;
-        if (attempt >= DEFAULT_RETRIES) throw e;
+        if (attempt >= maxRetries) throw e;
         await new Promise(r => setTimeout(r, backoffMs(attempt)));
         continue;
       }
@@ -358,7 +405,7 @@ async function callGemini(prompt, options = {}) {
     } catch (e) {
       lastError = e;
       if (e?.name === "AbortError") e.code = "AI_TIMEOUT";
-      if (!(e?.name === "AbortError" || isRetryable(e?.status)) || attempt >= DEFAULT_RETRIES) throw e;
+      if (!(e?.name === "AbortError" || isRetryable(e?.status)) || attempt >= maxRetries) throw e;
       await new Promise(r => setTimeout(r, backoffMs(attempt)));
     }
   }
@@ -408,31 +455,53 @@ export default async function handler(req, res) {
     }
 
     if (mode === "generate_question") {
-      const response = await callAI(buildGenerateQuestionPrompt(body), { json: true, thinkingLevel: "low", maxOutputTokens: 1000 });
-      const parsed = parseJsonObject(response.text);
-      if (!parsed) throw Object.assign(new Error("AI question generator mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
-      const options = Array.isArray(parsed.options) ? parsed.options.map(x => String(x)).filter(Boolean).slice(0, 4) : [];
-      if (!parsed.question || options.length !== 4 || !Number.isInteger(Number(parsed.answer)) || Number(parsed.answer) < 0 || Number(parsed.answer) > 3) {
-        throw Object.assign(new Error("AI question generator menghasilkan format soal yang tidak lengkap."), { code: "AI_INVALID_QUESTION" });
+      const prompt = buildGenerateQuestionPrompt(body);
+      let response;
+      let parsed;
+      let validationError = null;
+
+      // First attempt: normal adaptive generator.
+      try {
+        response = await callAI(prompt, { json: true, thinkingLevel: "low", maxOutputTokens: 900, timeoutMs: 12000, maxRetries: 1 });
+        parsed = parseJsonObject(response.text);
+        if (!parsed) throw Object.assign(new Error("AI question generator mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
+        return json(res, 200, { ...validateGeneratedQuestion(parsed, body), ai: true, meta: response.meta });
+      } catch (error) {
+        validationError = error;
       }
-      return json(res, 200, {
-        question: {
-          id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          question: String(parsed.question),
-          equation: String(parsed.equation || ""),
-          options,
-          answer: Number(parsed.answer),
-          conceptId: String(parsed.conceptId || body?.context?.conceptId || ""),
-          level: Number(parsed.level || body?.targetLevel || 1),
-          assessmentType: "practice",
-          status: "Published",
-          source: "ai-generated",
-          explanation: String(parsed.explanation || ""),
-          misconceptionFocus: Array.isArray(parsed.misconceptionFocus) ? parsed.misconceptionFocus.slice(0, 4).map(String) : []
-        },
-        ai: true,
-        meta: response.meta
-      });
+
+      // Second attempt: simpler prompt/model path when the first response is
+      // malformed or contains a meta-question. This is deliberately separate
+      // from the provider retry logic, which cannot detect bad generated content.
+      try {
+        const strictPrompt = `${prompt}\n\nPENTING: Respons sebelumnya tidak lolos validasi. Kali ini keluarkan HANYA soal matematika konkret, misalnya perhitungan/simplifikasi/penerapan konsep. Jangan keluarkan pertanyaan tentang langkah belajar.`;
+        response = await callGemini(strictPrompt, {
+          model: FALLBACK_MODEL,
+          json: true,
+          thinkingLevel: /^gemini-3\./i.test(FALLBACK_MODEL) ? "low" : undefined,
+          maxOutputTokens: 900,
+          timeoutMs: 12000,
+          maxRetries: 1
+        });
+        parsed = parseJsonObject(response.text);
+        if (!parsed) throw Object.assign(new Error("AI retry question generator mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON_RETRY" });
+        return json(res, 200, { ...validateGeneratedQuestion(parsed, body), ai: true, meta: { ...response.meta, retry: true } });
+      } catch (retryError) {
+        console.error("AI_GENERATE_QUESTION_FAILED", {
+          firstCode: validationError?.code || null,
+          firstMessage: validationError?.message || null,
+          retryCode: retryError?.code || null,
+          retryMessage: retryError?.message || null,
+          providerStatus: retryError?.status || validationError?.status || null
+        });
+        return json(res, 503, {
+          error: "AI belum berhasil membuat soal berikutnya.",
+          retryable: true,
+          fallback: true,
+          code: retryError?.code || validationError?.code || "AI_GENERATE_QUESTION_FAILED",
+          providerStatus: retryError?.status || validationError?.status || null
+        });
+      }
     }
 
     if (mode === "recommend") {
@@ -499,7 +568,7 @@ export default async function handler(req, res) {
     // Tutor intentionally uses a separate, conservative model path. This
     // keeps multimodal tutoring independent from the heavier correction /
     // recommendation flows and avoids Gemini 3 thinking/output edge cases.
-    const tutorModel = process.env.GEMINI_TUTOR_MODEL || "gemini-2.5-flash";
+    const tutorModel = process.env.GEMINI_TUTOR_MODEL || "gemini-3.8-flash";
     let response;
     try {
       response = await callGemini(buildTutorPrompt(message, tutorContext, history), {
@@ -509,7 +578,8 @@ export default async function handler(req, res) {
         imageUrl: tutorContext.imageUrl,
         // Image is preferred context, never a hard requirement.
         imageExpected: false,
-        maxOutputTokens: 800
+        maxOutputTokens: 900,
+        thinkingLevel: "low"
       });
     } catch (primaryError) {
       // One deterministic fallback to the configured primary model. No retry
@@ -533,10 +603,16 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error("AI endpoint error", { mode, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, code: error?.code || null, status: error?.status || null, message: error?.message || "unknown", latencyMs: Date.now() - startedAt });
     if (mode === "tutor") {
-      const context = body.context || {};
-      const concept = context.conceptName || context.conceptId || "konsep yang sedang dipelajari";
-      const panel = context.panelTitle ? ` pada panel ${context.panelTitle}` : "";
-      return json(res, 200, { reply: `Untuk ${concept}${panel}, jelaskan dulu apa yang kamu ketahui dari soal atau panel. Setelah itu tentukan operasi matematika yang digunakan, lalu kerjakan satu langkah terlebih dahulu.`, ai: false, fallback: true, code: error?.code || "AI_TUTOR_FALLBACK" });
+      // Return a real error so tutorService can use its contextual local fallback.
+      // Do not return the old canned pedagogical sentence here: that made every
+      // Gemini failure look like a successful but repetitive Tutor response.
+      return json(res, 503, {
+        error: "Tutor AI gagal menghasilkan respons.",
+        retryable: true,
+        fallback: true,
+        code: error?.code || "AI_TUTOR_FALLBACK",
+        providerStatus: error?.status || null
+      });
     }
     if (mode === "correct") {
       return json(res, 200, { ...normalizeCorrection(body.baselineDiagnosis || {}, body.baselineDiagnosis || {}), ai: false, fallback: true, code: error?.code || "AI_CORRECTION_FALLBACK" });

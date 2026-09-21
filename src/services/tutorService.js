@@ -217,20 +217,31 @@ function localGeneratedQuestion({ currentQuestion, context = {}, targetLevel = 1
   return {id,question:`Latihan lanjutan: pada konsep ${name}, langkah manakah yang paling tepat dilakukan terlebih dahulu?`,equation:"",options:["Menentukan operasi yang digunakan","Langsung memilih hasil akhir","Mengabaikan informasi soal","Mengganti konsep dengan materi lain"],answer:0,conceptId,level:Math.max(1,Number(targetLevel||1)),assessmentType:"practice",status:"Published",source:"ai-fallback",explanation:`Identifikasi operasi dan informasi yang diberikan terlebih dahulu pada ${name}.`};
 }
 
-export async function generateNextPracticeQuestion({ currentQuestion, context = {}, studentModel = {}, hintsUsed = 0, targetLevel = 1 }) {
+export async function generateNextPracticeQuestion({ currentQuestion, context = {}, studentModel = {}, hintsUsed = 0, targetLevel = 1, questionBank = [], previousOutcome = {} }) {
   try {
+    const sameConcept = Array.isArray(questionBank)
+      ? questionBank.filter(q => q && q.id !== currentQuestion?.id && (q.assessmentType || "practice") === "practice" && q.status !== "Draft" && (!context?.conceptId || q.conceptId === context.conceptId)).slice(0, 16)
+      : [];
     const result = await callEndpoint({
       mode: "generate_question",
       currentQuestion,
       context,
       studentModel,
       hintsUsed,
-      targetLevel
-    }, { timeoutMs: 40000 });
-    return result?.question ? { ...result.question, ai: true, meta: result.meta } : localGeneratedQuestion({ currentQuestion, context, targetLevel });
+      targetLevel,
+      previousOutcome,
+      questionBank: sameConcept
+    }, { timeoutMs: 30000 });
+    if (result?.question?.question && Array.isArray(result.question.options) && result.question.options.length === 4) {
+      return { ...result.question, ai: true, meta: result.meta };
+    }
+    return null;
   } catch (error) {
     console.error("AI question generation failed", error);
-    return localGeneratedQuestion({ currentQuestion, context, targetLevel });
+    // Do NOT manufacture the old generic "langkah manakah..." question here.
+    // The caller can fall back to an existing bank question through the
+    // recommendation engine instead of pretending that it was AI-generated.
+    return null;
   }
 }
 
