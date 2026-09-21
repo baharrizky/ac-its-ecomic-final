@@ -27,8 +27,7 @@ function renderInline(text, keyPrefix = "i") {
   const nodes = [];
   let rest = String(text || "");
   let index = 0;
-  // Accept both explicit delimiters and common raw-LaTeX/math notation from AI.
-  const tokenRegex = /(\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)|(\$([^$\n]+)\$)|((?:[A-Za-z0-9]+(?:_\{[^{}]+\}|_[A-Za-z0-9]+)?\^(?:\{[^{}]+\}|[A-Za-z0-9]+))(?:\s*(?:=|\\times|\\cdot|×|·|\+|\-|÷|\\div)\s*(?:[A-Za-z0-9]+|\{[^{}]+\}|\([^)]*\)|\\frac\{[^{}]+\}\{[^{}]+\}))?))/;
+  const tokenRegex = /(\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)|(\$([^$\n]+)\$))/;
 
   while (rest) {
     const match = rest.match(tokenRegex);
@@ -36,35 +35,18 @@ function renderInline(text, keyPrefix = "i") {
       nodes.push(formatPlain(rest, `${keyPrefix}-plain-${index++}`));
       break;
     }
-    if (match.index > 0) nodes.push(formatPlain(rest.slice(0, match.index), `${keyPrefix}-before-${index++}`));
-    const expression = match[2] ?? match[3] ?? match[4] ?? match[6] ?? match[7] ?? "";
+
+    if (match.index > 0) {
+      nodes.push(formatPlain(rest.slice(0, match.index), `${keyPrefix}-before-${index++}`));
+    }
+
+    const expression = match[2] ?? match[3] ?? match[4] ?? match[6] ?? "";
     const display = Boolean(match[2] || match[3]);
     nodes.push(<React.Fragment key={`${keyPrefix}-math-${index++}`}>{renderMath(expression, display)}</React.Fragment>);
     rest = rest.slice(match.index + match[0].length);
   }
+
   return nodes;
-}
-
-function looksLikeDisplayMath(line) {
-  const value = String(line || "").trim();
-  if (!value) return false;
-  if (/^(?:\$\$|\\\[).*(?:\$\$|\\\])$/s.test(value)) return true;
-  // A standalone equation/LaTeX line should be displayed vertically.
-  return /(?:=|\\frac|\\sqrt|\\times|\\cdot|\\div|\^\{|\^\w|≤|≥|≠)/.test(value)
-    && !/[.!?]\s*$/.test(value.replace(/\$[^$]+\$/g, ""));
-}
-
-function renderBlock(block, keyPrefix) {
-  const lines = String(block || "").split(/\r?\n/);
-  return lines.map((line, index) => {
-    const value = line.trim();
-    if (!value) return <div key={`${keyPrefix}-blank-${index}`} style={{height: 6}} />;
-    if (looksLikeDisplayMath(value)) {
-      const expression = value.replace(/^\$\$(.*?)\$\$$/s, "$1").replace(/^\\\[(.*?)\\\]$/s, "$1").trim();
-      return <div className="ai-response-line" key={`${keyPrefix}-line-${index}`}>{renderMath(expression, true)}</div>;
-    }
-    return <div className="ai-response-line" key={`${keyPrefix}-line-${index}`}>{renderInline(value, `${keyPrefix}-inline-${index}`)}</div>;
-  });
 }
 
 function latexToReadable(value) {
@@ -108,7 +90,7 @@ export default function AIResponse({ text, className = "" }) {
     <div className={`ai-response ${className}`.trim()}>
       {blocks.map((block, index) => (
         <div className="ai-response-block" key={index}>
-          {renderBlock(block, `b-${index}`)}
+          {renderInline(block, `b-${index}`)}
         </div>
       ))}
     </div>

@@ -17,7 +17,27 @@ export default function PracticePage({questions=[],studentModel={},concepts=[],o
  const [index,setIndex]=useState(startIndex); const [selected,setSelected]=useState(null); const [diagnosis,setDiagnosis]=useState(null); const [hintLevel,setHintLevel]=useState(0); const [generatingNext,setGeneratingNext]=useState(false); const [hintsUsed,setHintsUsed]=useState(0); const [aiHint,setAiHint]=useState(""); const [aiReply,setAiReply]=useState(""); const [loadingHint,setLoadingHint]=useState(false); const [loadingAI,setLoadingAI]=useState(false);
  const q=allQuestions[index]; const conceptName=concepts.find(c=>c.id===q?.conceptId)?.name||q?.conceptId||"Konsep";
  if(!published.length)return <div><div className="page-kicker">Adaptive Practice</div><h1 className="page-title">Latihan Berjenjang</h1><div className="card empty-state"><strong>Belum ada soal Published.</strong><span>Guru perlu menerbitkan soal latihan pada Bank Soal.</span></div></div>;
- async function choose(i){if(diagnosis)return;setSelected(i);const d=await onAnswer?.(q,i,"practice",0,{hintsUsed});setDiagnosis(d||null);setAiHint("");setAiReply("");}
+ async function choose(i){
+   if(diagnosis)return;
+   setSelected(i);
+   const d=await onAnswer?.(q,i,"practice",0,{hintsUsed});
+   setDiagnosis(d||null);
+   setAiHint("");
+   setAiReply("");
+   if(d?.correct && onGenerateQuestion){
+     setGeneratingNext(true);
+     try{
+       const generated=await onGenerateQuestion(q,{
+         correct:true,
+         hintsUsed,
+         selectedAnswer:q.options?.[i],
+         correctAnswer:q.options?.[q.answer],
+         misconceptionTag:d?.misconceptionTag||null
+       });
+       setDiagnosis(prev=>({...prev,generatedQuestion:generated?.ai?generated:null,generationError:generated?.ai?null:(generated?.error||generated?.code||"AI belum berhasil membuat soal berikutnya.")}));
+     }finally{setGeneratingNext(false);}
+   }
+ }
  async function useHint(){if(!diagnosis||diagnosis.correct||hintLevel>=3||loadingHint)return;const next=Math.min(3,hintLevel+1);setHintLevel(next);setHintsUsed(v=>v+1);setLoadingHint(true);try{const result=await onHint?.({question:q,hintIndex:next,conceptId:q.conceptId});setAiHint(result?.hint||"Fokus pada operasi yang digunakan pada soal dan tuliskan satu langkah antara.");}finally{setLoadingHint(false)}}
  function retry(){setSelected(null);setDiagnosis(null);setAiHint("");setAiReply("");}
  async function askAI(){if(!diagnosis?.correct||!onAIExplain)return;setLoadingAI(true);try{const r=await onAIExplain({message:`Jelaskan mengapa jawaban siswa benar dan hubungkan langkahnya dengan konsep ${conceptName}. Jangan membuat soal baru.`,context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName}});setAiReply(r?.reply||"Belum ada penjelasan AI.");}finally{setLoadingAI(false)}}
@@ -89,7 +109,7 @@ export default function PracticePage({questions=[],studentModel={},concepts=[],o
        )}
        {diagnosis.correct&&(
         <div style={{marginTop:10}}>
-         <div className="ai-feedback"><strong>{diagnosis.generatedQuestion?"AI berhasil membuat soal berikutnya":"AI belum berhasil membuat soal berikutnya"}</strong><p>{diagnosis.generatedQuestion?"Soal ini dibuat baru oleh AI berdasarkan konsep, mastery, dan penggunaan hint.":(diagnosis.generationError||"Jangan lanjut ke soal bank. Buat ulang soal AI terlebih dahulu.")}</p></div>
+         <div className="ai-feedback"><strong>{diagnosis.generatedQuestion?"AI berhasil membuat soal berikutnya":generatingNext?"AI sedang membuat soal berikutnya…":"AI belum berhasil membuat soal berikutnya"}</strong><p>{diagnosis.generatedQuestion?"Soal ini dibuat baru oleh AI berdasarkan konsep, mastery, dan penggunaan hint.":generatingNext?"Tunggu sebentar. AI sedang membuat soal baru dari konsep yang baru kamu kuasai.":(diagnosis.generationError||"Jangan lanjut ke soal bank. Buat ulang soal AI terlebih dahulu.")}</p></div>
          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
           {diagnosis.generatedQuestion&&<button className="btn-primary" onClick={next}>Soal Berikutnya →</button>}
           {!diagnosis.generatedQuestion&&<button className="btn-primary" onClick={generateAgain} disabled={generatingNext}>{generatingNext?"AI sedang membuat soal…":"Buat Soal AI Lagi"}</button>}

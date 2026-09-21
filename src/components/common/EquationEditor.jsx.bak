@@ -7,28 +7,6 @@ const QUICK = [
   ["×", "\\times"], ["÷", "\\div"], ["≤", "\\leq"], ["≥", "\\geq"], ["Σ", "\\sum_{i=1}^{n}"],
 ];
 
-function splitEquationLines(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return [];
-  const explicit = raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-  if (explicit.length > 1) return explicit;
-  // If several equalities were pasted into one line, make a best-effort vertical layout.
-  if ((raw.match(/=/g) || []).length > 1) {
-    const pieces = raw.split(/,\s+(?=[A-Za-z(\\])/g).map(x=>x.trim()).filter(Boolean);
-    if (pieces.length > 1) {
-      const out=[]; let carry="";
-      for (const piece of pieces) {
-        if (/^a\s*(?:≠|=)/.test(piece) && carry) { carry += ", " + piece; continue; }
-        if (carry) out.push(carry);
-        carry=piece;
-      }
-      if (carry) out.push(carry);
-      if (out.length > 1) return out;
-    }
-  }
-  return [raw];
-}
-
 export default function EquationEditor({ value = "", onChange, label = "Persamaan (LaTeX, opsional)" }) {
   const ref = useRef(null);
   const [error, setError] = useState("");
@@ -37,7 +15,7 @@ export default function EquationEditor({ value = "", onChange, label = "Persamaa
     if (!ref.current) return;
     if (!value.trim()) { ref.current.innerHTML = '<span class="subtle">Pratinjau persamaan akan muncul di sini.</span>'; setError(""); return; }
     try {
-      const lines = splitEquationLines(value);
+      const lines = String(value).split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
       ref.current.innerHTML = lines.length > 1
         ? lines.map(line=>`<div class="equation-line">${katex.renderToString(line,{throwOnError:true,displayMode:true})}</div>`).join("")
         : katex.renderToString(value, { throwOnError: true, displayMode: true });
@@ -60,9 +38,7 @@ export default function EquationEditor({ value = "", onChange, label = "Persamaa
         return;
       }
     }
-    // Every inserted equation gets its own line when the editor already contains content.
-    // This keeps multi-step derivations vertically readable in the preview.
-    const separator = current && !current.endsWith("\n") ? "\n" : "";
+    const separator = current && !current.endsWith("\n") ? " " : "";
     onChange(current ? `${current}${separator}${snippet}` : snippet);
   }
 
