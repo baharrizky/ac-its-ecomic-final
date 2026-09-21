@@ -199,49 +199,30 @@ export async function recommendNextQuestion({ studentModel, questions, recentAtt
   }
 }
 
-function localGeneratedQuestion({ currentQuestion, context = {}, targetLevel = 1 }) {
-  const conceptId = context?.conceptId || currentQuestion?.conceptId || "";
-  const name = String(context?.conceptName || conceptId || "Konsep");
-  const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const base = String(currentQuestion?.question || "").trim();
-  const lower = `${name} ${base}`.toLowerCase();
-  if (/perkalian|sifat.*kali|perkalian eksponen/.test(lower)) {
-    return {id,question:"Sederhanakan $2^3 \times 2^2$.",equation:"2^3 \times 2^2",options:["$2^5$","$2^6$","$4^5$","$2^1$"],answer:0,conceptId,level:Math.max(1,Number(targetLevel||1)),assessmentType:"practice",status:"Published",source:"ai-fallback",explanation:"Untuk basis yang sama, pangkat dijumlahkan: $a^m\times a^n=a^{m+n}$."};
-  }
-  if (/pembagian|sifat.*bagi/.test(lower)) {
-    return {id,question:"Sederhanakan $3^5 \div 3^2$.",equation:"3^5 \div 3^2",options:["$3^2$","$3^3$","$3^7$","$9^3$"],answer:1,conceptId,level:Math.max(1,Number(targetLevel||1)),assessmentType:"practice",status:"Published",source:"ai-fallback",explanation:"Untuk basis yang sama pada pembagian, pangkat dikurangkan: $a^m\div a^n=a^{m-n}$."};
-  }
-  if (/pangkat dari pangkat|pangkat.*pangkat/.test(lower)) {
-    return {id,question:"Sederhanakan $(2^3)^2$.",equation:"(2^3)^2",options:["$2^5$","$2^6$","$2^9$","$4^6$"],answer:1,conceptId,level:Math.max(1,Number(targetLevel||1)),assessmentType:"practice",status:"Published",source:"ai-fallback",explanation:"Pada pangkat dari pangkat, pangkat dikalikan: $(a^m)^n=a^{mn}$."};
-  }
-  return {id,question:`Latihan lanjutan: pada konsep ${name}, langkah manakah yang paling tepat dilakukan terlebih dahulu?`,equation:"",options:["Menentukan operasi yang digunakan","Langsung memilih hasil akhir","Mengabaikan informasi soal","Mengganti konsep dengan materi lain"],answer:0,conceptId,level:Math.max(1,Number(targetLevel||1)),assessmentType:"practice",status:"Published",source:"ai-fallback",explanation:`Identifikasi operasi dan informasi yang diberikan terlebih dahulu pada ${name}.`};
-}
-
-export async function generateNextPracticeQuestion({ currentQuestion, context = {}, studentModel = {}, hintsUsed = 0, targetLevel = 1, questionBank = [], previousOutcome = {} }) {
+export async function generateNextPracticeQuestion({ currentQuestion, context = {}, studentModel = {}, hintsUsed = 0, targetLevel = 1, previousOutcome = {} }) {
   try {
-    const sameConcept = Array.isArray(questionBank)
-      ? questionBank.filter(q => q && q.id !== currentQuestion?.id && (q.assessmentType || "practice") === "practice" && q.status !== "Draft" && (!context?.conceptId || q.conceptId === context.conceptId)).slice(0, 16)
-      : [];
-    const result = await callEndpoint({
-      mode: "generate_question",
+    // AI-only path: the question bank is intentionally NOT sent.
+    // The teacher supplies the starting question; every subsequent practice
+    // question is generated dynamically by the AI.
+    return await callEndpoint({
+      mode:"generate_question",
       currentQuestion,
-      context,
       studentModel,
       hintsUsed,
       targetLevel,
       previousOutcome,
-      questionBank: sameConcept
+      context
     }, { timeoutMs: 30000 });
-    if (result?.question?.question && Array.isArray(result.question.options) && result.question.options.length === 4) {
-      return { ...result.question, ai: true, meta: result.meta };
-    }
-    return null;
   } catch (error) {
-    console.error("AI question generation failed", error);
-    // Do NOT manufacture the old generic "langkah manakah..." question here.
-    // The caller can fall back to an existing bank question through the
-    // recommendation engine instead of pretending that it was AI-generated.
-    return null;
+    console.error("AI generate question failed", error);
+    return {
+      ai: false,
+      unavailable: true,
+      code: error?.code || "AI_GENERATE_QUESTION_FAILED",
+      status: error?.status || null,
+      providerStatus: error?.providerStatus || null,
+      error: error?.message || "AI belum berhasil membuat soal berikutnya."
+    };
   }
 }
 

@@ -7,32 +7,50 @@ import "katex/dist/katex.min.css";
 
 function renderEquation(value){if(!value)return null;try{return katex.renderToString(value,{displayMode:true,throwOnError:false})}catch{return value;}}
 
-export default function PracticePage({questions=[],studentModel={},concepts=[],onAnswer,onAIExplain,onHint}){
+export default function PracticePage({questions=[],studentModel={},concepts=[],onAnswer,onGenerateQuestion,onAIExplain,onHint}){
  const published=useMemo(()=>questions.filter(q=>q.status!=="Draft"&&(q.assessmentType||"practice")==="practice"&&Array.isArray(q.options)&&q.options.length),[questions]);
  const recommendation=useMemo(()=>chooseNextActivity(studentModel,published),[studentModel,published]);
  const initial=recommendation.questionId?published.find(q=>q.id===recommendation.questionId):published[0];
  const startIndex=Math.max(0,published.findIndex(q=>q.id===initial?.id));
  const [generatedQuestions,setGeneratedQuestions]=useState([]);
  const allQuestions=useMemo(()=>[...published,...generatedQuestions],[published,generatedQuestions]);
- const [index,setIndex]=useState(startIndex); const [selected,setSelected]=useState(null); const [diagnosis,setDiagnosis]=useState(null); const [hintLevel,setHintLevel]=useState(0); const [hintsUsed,setHintsUsed]=useState(0); const [aiHint,setAiHint]=useState(""); const [aiReply,setAiReply]=useState(""); const [loadingHint,setLoadingHint]=useState(false); const [loadingAI,setLoadingAI]=useState(false);
+ const [index,setIndex]=useState(startIndex); const [selected,setSelected]=useState(null); const [diagnosis,setDiagnosis]=useState(null); const [hintLevel,setHintLevel]=useState(0); const [generatingNext,setGeneratingNext]=useState(false); const [hintsUsed,setHintsUsed]=useState(0); const [aiHint,setAiHint]=useState(""); const [aiReply,setAiReply]=useState(""); const [loadingHint,setLoadingHint]=useState(false); const [loadingAI,setLoadingAI]=useState(false);
  const q=allQuestions[index]; const conceptName=concepts.find(c=>c.id===q?.conceptId)?.name||q?.conceptId||"Konsep";
  if(!published.length)return <div><div className="page-kicker">Adaptive Practice</div><h1 className="page-title">Latihan Berjenjang</h1><div className="card empty-state"><strong>Belum ada soal Published.</strong><span>Guru perlu menerbitkan soal latihan pada Bank Soal.</span></div></div>;
  async function choose(i){if(diagnosis)return;setSelected(i);const d=await onAnswer?.(q,i,"practice",0,{hintsUsed});setDiagnosis(d||null);setAiHint("");setAiReply("");}
  async function useHint(){if(!diagnosis||diagnosis.correct||hintLevel>=3||loadingHint)return;const next=Math.min(3,hintLevel+1);setHintLevel(next);setHintsUsed(v=>v+1);setLoadingHint(true);try{const result=await onHint?.({question:q,hintIndex:next,conceptId:q.conceptId});setAiHint(result?.hint||"Fokus pada operasi yang digunakan pada soal dan tuliskan satu langkah antara.");}finally{setLoadingHint(false)}}
  function retry(){setSelected(null);setDiagnosis(null);setAiHint("");setAiReply("");}
  async function askAI(){if(!diagnosis?.correct||!onAIExplain)return;setLoadingAI(true);try{const r=await onAIExplain({message:`Jelaskan mengapa jawaban siswa benar dan hubungkan langkahnya dengan konsep ${conceptName}. Jangan membuat soal baru.`,context:{question:q.question,equation:q.equation,options:q.options,selectedAnswer:q.options[selected],correctAnswer:q.options[q.answer],conceptId:q.conceptId,conceptName}});setAiReply(r?.reply||"Belum ada penjelasan AI.");}finally{setLoadingAI(false)}}
- function next(){
-   const generated=diagnosis?.generatedQuestion;
+ async function generateAgain(){
+   if(!onGenerateQuestion||!diagnosis?.correct||generatingNext)return;
+   setGeneratingNext(true);
+   try{
+     const generated=await onGenerateQuestion(q,{correct:Boolean(diagnosis?.correct),hintsUsed,selectedAnswer:q.options?.[selected],correctAnswer:q.options?.[q.answer],misconceptionTag:diagnosis?.misconceptionTag||null});
+     setDiagnosis(prev=>({...prev,generatedQuestion:generated?.ai?generated:null,generationError:generated?.ai?null:(generated?.error||generated?.code||"AI belum berhasil membuat soal berikutnya.")}));
+   }finally{setGeneratingNext(false);}
+ }
+ async function next(){
+   let generated=diagnosis?.generatedQuestion;
+   // For an incorrect answer, the next question is generated only after the
+   // student has used the available hints. There is intentionally no bank
+   // question fallback.
+   if(!diagnosis?.correct && hintLevel>=3 && !generated){
+     if(!onGenerateQuestion || generatingNext)return;
+     setGeneratingNext(true);
+     try{
+       generated=await onGenerateQuestion(q,{correct:false,hintsUsed,selectedAnswer:q.options?.[selected],correctAnswer:q.options?.[q.answer],misconceptionTag:diagnosis?.misconceptionTag||null});
+       if(generated?.ai){setDiagnosis(prev=>({...prev,generatedQuestion:generated,generationError:null}));}
+       else{setDiagnosis(prev=>({...prev,generationError:generated?.error||generated?.code||"AI belum berhasil membuat soal berikutnya."}));return;}
+     }finally{setGeneratingNext(false)}
+   }
    if(generated?.id){
      const existing=allQuestions.findIndex(item=>item.id===generated.id);
      if(existing>=0){resetAndSet(existing);return;}
      setGeneratedQuestions(prev=>[...prev,generated]);
      setSelected(null);setDiagnosis(null);setAiHint("");setAiReply("");setHintLevel(0);setHintsUsed(0);setIndex(published.length+generatedQuestions.length);return;
    }
-   const rec=diagnosis?.recommendation;
-   if(rec?.questionId&&rec.questionId!==q.id){const ni=allQuestions.findIndex(item=>item.id===rec.questionId);if(ni>=0){resetAndSet(ni);return;}}
-   if(index>=allQuestions.length-1){resetAndSet(0);return;}
-   resetAndSet(index+1);
+   // AI-only practice: never jump to another teacher-authored bank question.
+   if(!diagnosis?.correct){return;}
  }
  function resetAndSet(ni){setSelected(null);setDiagnosis(null);setAiHint("");setAiReply("");setHintLevel(0);setHintsUsed(0);setIndex(ni)}
  const progress=Math.round(((index+1)/Math.max(1,allQuestions.length))*100);
@@ -71,9 +89,10 @@ export default function PracticePage({questions=[],studentModel={},concepts=[],o
        )}
        {diagnosis.correct&&(
         <div style={{marginTop:10}}>
-         <div className="ai-feedback"><strong>AI menyiapkan soal berikutnya</strong><p>{diagnosis.generatedQuestion?"Soal dan pilihan jawaban baru sudah dibuat berdasarkan konsep, mastery, dan penggunaan hint.":(nextReason||"AI memilih soal berikutnya berdasarkan mastery, miskonsepsi, dan riwayat hint.")}</p></div>
+         <div className="ai-feedback"><strong>{diagnosis.generatedQuestion?"AI berhasil membuat soal berikutnya":"AI belum berhasil membuat soal berikutnya"}</strong><p>{diagnosis.generatedQuestion?"Soal ini dibuat baru oleh AI berdasarkan konsep, mastery, dan penggunaan hint.":(diagnosis.generationError||"Jangan lanjut ke soal bank. Buat ulang soal AI terlebih dahulu.")}</p></div>
          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
-          <button className="btn-primary" onClick={next}>Soal Berikutnya →</button>
+          {diagnosis.generatedQuestion&&<button className="btn-primary" onClick={next}>Soal Berikutnya →</button>}
+          {!diagnosis.generatedQuestion&&<button className="btn-primary" onClick={generateAgain} disabled={generatingNext}>{generatingNext?"AI sedang membuat soal…":"Buat Soal AI Lagi"}</button>}
           <button className="btn" onClick={askAI} disabled={loadingAI}>{loadingAI?"AI sedang menjelaskan…":"Tanya Tutor"}</button>
          </div>
          {aiReply&&<div className="ai-feedback"><strong>AI Tutor</strong><AIResponse text={aiReply}/></div>}

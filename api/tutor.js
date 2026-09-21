@@ -1,6 +1,6 @@
 const DEFAULT_PROVIDER = (process.env.AI_PROVIDER || "gemini").toLowerCase();
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.6-flash";
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.7-flash";
 const DEFAULT_TIMEOUT_MS = Math.max(8000, Number(process.env.AI_TIMEOUT_MS || 30000));
 const DEFAULT_RETRIES = Math.min(3, Math.max(1, Number(process.env.AI_MAX_RETRIES || 2)));
 
@@ -123,26 +123,27 @@ function buildGenerateQuestionPrompt(payload) {
   const hintsUsed = Number(payload?.hintsUsed || 0);
   const targetLevel = Math.max(1, Math.min(5, Number(payload?.targetLevel || current.level || current.difficulty || 1)));
   const previousOutcome = payload?.previousOutcome || {};
-  const bank = Array.isArray(payload?.questionBank) ? payload.questionBank.slice(0, 16) : [];
   return [
     "Kamu adalah AI Question Generator untuk AC-ITS E-Comic.",
-    "Buat SATU soal pilihan ganda matematika BARU untuk latihan berikutnya.",
+    "BUAT SENDIRI SATU SOAL PILIHAN GANDA MATEMATIKA BARU. Jangan memilih, merekomendasikan, atau mengambil soal dari bank soal.",
+    "Dalam mode ini guru hanya menyediakan soal awal. Semua soal setelah siswa mengerjakan soal awal WAJIB dibuat secara dinamis oleh AI.",
     "Soal WAJIB merupakan soal matematika nyata yang dapat dihitung/dijawab siswa, bukan pertanyaan tentang strategi belajar.",
     "JANGAN membuat soal seperti 'langkah manakah yang tepat', 'apa yang dilakukan terlebih dahulu', 'menentukan operasi yang digunakan', atau pertanyaan meta tentang cara belajar.",
-    "Gunakan konsep yang sama atau konsep prasyarat yang SUDAH dipelajari siswa. Jangan memperkenalkan materi baru.",
     `Target level: ${targetLevel}. Hint pada soal sebelumnya: ${hintsUsed}.`,
-    "Jika siswa benar tanpa hint, naikkan kompleksitas secara bertahap. Jika siswa menggunakan hint, pertahankan atau turunkan kompleksitas.",
-    "Soal harus berbeda dari soal sebelumnya dan tidak boleh menyalin soal dari bank.",
+    "Jika siswa benar tanpa hint, naikkan kompleksitas secara bertahap. Jika siswa benar tetapi memakai hint, pertahankan atau naikkan sedikit. Jika siswa salah atau memakai banyak hint, pertahankan atau turunkan kompleksitas dan perbaiki miskonsepsi yang terdeteksi.",
+    "Soal baru harus tetap berada pada konsep yang sedang dipelajari atau prasyarat langsungnya. Jangan memperkenalkan konsep baru.",
+    "Soal baru harus berbeda dari soal sebelumnya secara angka, bentuk, dan redaksi, tetapi tetap menguji kompetensi yang sama.",
     "Jika konsep berupa sifat eksponen, buat variasi hitungan eksponen yang benar-benar menguji sifat tersebut. Jika konsep lain, buat soal yang benar-benar menguji konsep tersebut.",
     "Buat tepat 4 pilihan jawaban dan hanya satu yang benar.",
     "Sertakan pembahasan singkat dan misconceptionFocus untuk pengecoh yang mungkin dipilih siswa.",
+    "WAJIB hitung dan verifikasi jawaban secara internal sebelum mengirim. Field answer adalah INDEX 0-3 dari opsi yang benar. Field correctOption harus PERSIS sama dengan options[answer]. Field verification harus menunjukkan perhitungan yang membuktikan jawaban benar.",
+    "Untuk eksponen, jangan mengubah konsep perkalian eksponen menjadi penjumlahan dua bilangan berpangkat jika itu bukan kompetensi yang sedang diuji.",
     "Gunakan Bahasa Indonesia dan notasi matematika sederhana/LaTeX inline.",
-    "Balas HANYA JSON valid dengan struktur: {\"question\":string,\"equation\":string,\"options\":string[],\"answer\":number,\"conceptId\":string,\"level\":number,\"explanation\":string,\"misconceptionFocus\":string[]}",
-    `KONSEP DAN MATERI: ${JSON.stringify(context)}`,
+    "Balas HANYA JSON valid dengan struktur: {\"question\":string,\"equation\":string,\"options\":string[],\"answer\":number,\"correctOption\":string,\"verification\":string,\"conceptId\":string,\"level\":number,\"explanation\":string,\"misconceptionFocus\":string[]}",
+    `KONSEP DAN MATERI YANG BOLEH DIGUNAKAN: ${JSON.stringify(context)}`,
     `STUDENT MODEL: ${JSON.stringify(model)}`,
     `HASIL SOAL SEBELUMNYA: ${JSON.stringify(previousOutcome)}`,
-    `SOAL SEBELUMNYA: ${JSON.stringify(current)}`,
-    `BANK SOAL SEJENIS UNTUK DIHINDARI DUPLIKASINYA: ${JSON.stringify(bank)}`
+    `SOAL SEBELUMNYA: ${JSON.stringify(current)}`
   ].join("\n\n");
 }
 
@@ -159,14 +160,31 @@ function validateGeneratedQuestion(parsed, body) {
     "mengabaikan informasi soal",
     "mengganti konsep dengan materi lain"
   ];
-  if (!question || options.length !== 4 || !Number.isInteger(Number(parsed?.answer)) || Number(parsed.answer) < 0 || Number(parsed.answer) > 3) {
+  const answerIndex = Number(parsed?.answer);
+  const normalized = value => String(value ?? "").replace(/\s+/g, " ").trim();
+  const correctOption = normalized(parsed?.correctOption);
+  if (!question || options.length !== 4 || new Set(options.map(normalized)).size !== 4 || !Number.isInteger(answerIndex) || answerIndex < 0 || answerIndex > 3) {
     throw Object.assign(new Error("AI question generator menghasilkan format soal yang tidak lengkap."), { code: "AI_INVALID_QUESTION" });
   }
   if (bannedMeta.some(term => lower.includes(term))) {
     throw Object.assign(new Error("AI question generator menghasilkan soal meta, bukan soal matematika."), { code: "AI_META_QUESTION" });
   }
+  if (!correctOption || correctOption !== normalized(options[answerIndex])) {
+    throw Object.assign(new Error("AI question generator tidak konsisten antara answer dan correctOption."), { code: "AI_ANSWER_MISMATCH" });
+  }
+  if (!String(parsed?.verification || "").trim()) {
+    throw Object.assign(new Error("AI question generator tidak menyertakan verifikasi hitungan."), { code: "AI_NO_VERIFICATION" });
+  }
+  const mathSignal = `${question} ${parsed?.equation || ""} ${options.join(" ")}`;
+  if (!/[0-9]|[=+\-*/^]|\b(pangkat|eksponen|persamaan|fungsi|pecahan|perbandingan|peluang|geometri|aljabar)\b/i.test(mathSignal)) {
+    throw Object.assign(new Error("AI question generator tidak menghasilkan soal matematika yang terdeteksi."), { code: "AI_NOT_MATH" });
+  }
   const expectedConcept = String(body?.context?.conceptId || body?.currentQuestion?.conceptId || "");
-  const conceptId = String(parsed?.conceptId || expectedConcept);
+  const returnedConcept = String(parsed?.conceptId || "");
+  if (expectedConcept && returnedConcept && returnedConcept !== expectedConcept) {
+    throw Object.assign(new Error("AI question generator keluar dari konsep yang sedang dipelajari."), { code: "AI_CONCEPT_DRIFT" });
+  }
+  const conceptId = expectedConcept || returnedConcept;
   const level = Math.max(1, Math.min(5, Number(parsed?.level || body?.targetLevel || 1)));
   return {
     question: {
@@ -174,7 +192,9 @@ function validateGeneratedQuestion(parsed, body) {
       question,
       equation: String(parsed.equation || ""),
       options,
-      answer: Number(parsed.answer),
+      answer: answerIndex,
+      correctOption,
+      verification: String(parsed.verification || ""),
       conceptId,
       level,
       assessmentType: "practice",
@@ -462,7 +482,7 @@ export default async function handler(req, res) {
 
       // First attempt: normal adaptive generator.
       try {
-        response = await callAI(prompt, { json: true, thinkingLevel: "low", maxOutputTokens: 900, timeoutMs: 12000, maxRetries: 1 });
+        response = await callAI(prompt, { json: true, thinkingLevel: "medium", maxOutputTokens: 1100, timeoutMs: 18000, maxRetries: 0 });
         parsed = parseJsonObject(response.text);
         if (!parsed) throw Object.assign(new Error("AI question generator mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON" });
         return json(res, 200, { ...validateGeneratedQuestion(parsed, body), ai: true, meta: response.meta });
@@ -478,10 +498,10 @@ export default async function handler(req, res) {
         response = await callGemini(strictPrompt, {
           model: FALLBACK_MODEL,
           json: true,
-          thinkingLevel: /^gemini-3\./i.test(FALLBACK_MODEL) ? "low" : undefined,
-          maxOutputTokens: 900,
-          timeoutMs: 12000,
-          maxRetries: 1
+          thinkingLevel: /^gemini-3\./i.test(FALLBACK_MODEL) ? "medium" : undefined,
+          maxOutputTokens: 1100,
+          timeoutMs: 18000,
+          maxRetries: 0
         });
         parsed = parseJsonObject(response.text);
         if (!parsed) throw Object.assign(new Error("AI retry question generator mengembalikan JSON tidak valid."), { code: "AI_INVALID_JSON_RETRY" });
